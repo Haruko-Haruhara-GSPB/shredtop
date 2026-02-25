@@ -1,5 +1,4 @@
 # shred-probe configuration
-# See: https://github.com/Haruko-Haruhara-GSPB/shred-probe
 
 # DoubleZero bebop feed (Malbec Labs relay)
 [[sources]]

@@ -1,8 +1,8 @@
 //! `shred-probe discover` — show multicast memberships and configured sources.
 //!
-//! Replaces `haruko feeds find`. Queries the kernel for active multicast
-//! group memberships, lists configured sources from probe.toml, and shows
-//! DoubleZero group metadata if the CLI is installed.
+//! Queries the kernel for active multicast group memberships, lists configured
+//! sources from probe.toml, and shows DoubleZero group metadata if the CLI is
+//! installed.
 
 use anyhow::Result;
 use std::process::Command;

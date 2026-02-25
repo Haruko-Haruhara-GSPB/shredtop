@@ -51,7 +51,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Solana shred feed latency benchmark — measure your edge before the block lands"
-repository = "https://github.com/Haruko-Haruhara-GSPB/shred-probe"
 license = "MIT"
 
 [[bin]]
