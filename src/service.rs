@@ -38,12 +38,13 @@ WantedBy=multi-user.target
     std::fs::write(UNIT_PATH, unit)?;
 
     let _ = Command::new("systemctl").arg("daemon-reload").status();
+    let _ = Command::new("systemctl").args(["enable", "shredder"]).status();
+    let _ = Command::new("systemctl").args(["start", "shredder"]).status();
 
-    println!("Installed {}.", UNIT_PATH);
+    println!("Service installed, enabled, and started.");
     println!();
-    println!("  shredder service start    — start now");
-    println!("  shredder service enable   — start on boot");
-    println!("  shredder status           — view latest metrics");
+    println!("  shredder monitor  — open live dashboard");
+    println!("  shredder status   — view latest metrics");
 
     Ok(())
 }
