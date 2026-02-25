@@ -58,7 +58,7 @@ fn fast_upgrade() -> Result<()> {
     anyhow::ensure!(ok, "git pull failed");
 
     let ok = Command::new("cargo")
-        .args(["build", "--release"])
+        .args(["build", "--release", "--quiet"])
         .status()?
         .success();
     anyhow::ensure!(ok, "cargo build failed");
@@ -77,7 +77,7 @@ fn fast_upgrade() -> Result<()> {
 /// Slow path — cargo install --git (full recompile, no local clone needed).
 fn slow_upgrade(latest: &Option<String>) -> Result<()> {
     let tag_owned;
-    let mut args = vec!["install", "--git", REPO_URL, "--force"];
+    let mut args = vec!["install", "--git", REPO_URL, "--force", "--quiet"];
     if let Some(ref tag) = latest {
         tag_owned = tag.clone();
         args.push("--tag");
