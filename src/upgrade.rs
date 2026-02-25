@@ -36,23 +36,27 @@ pub fn run() -> Result<()> {
 
     let url = DOWNLOAD_URL.replace("{tag}", &tag);
     let dest = which_shredder()?;
+    let tmp = dest.with_extension("tmp");
 
     let ok = Command::new("curl")
         .args(["-fsSL", "--max-time", "120", "-o"])
-        .arg(&dest)
+        .arg(&tmp)
         .arg(&url)
         .status()?
         .success();
     anyhow::ensure!(ok, "download failed — check your internet connection");
 
-    // Ensure the binary is executable
+    // chmod before replacing so there's no window where the binary is non-executable
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&dest)?.permissions();
+        let mut perms = std::fs::metadata(&tmp)?.permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&dest, perms)?;
+        std::fs::set_permissions(&tmp, perms)?;
     }
+
+    // Atomic rename — works even while the old binary is running
+    std::fs::rename(&tmp, &dest)?;
 
     println!("Done. {} installed to {}.", tag, dest.display());
     Ok(())
