@@ -37,7 +37,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart={binary} run -c {config}
+ExecStart={binary} -c {config} run
 Restart=always
 RestartSec=5
 StandardOutput=journal
