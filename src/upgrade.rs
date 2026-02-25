@@ -91,18 +91,21 @@ pub fn run_from_source() -> Result<()> {
         .success();
     anyhow::ensure!(ok, "cargo build failed");
 
-    // Copy the built binary over the currently installed one
+    // Copy to a temp file then rename — avoids ETXTBSY on the running binary
     let built = repo.join("target/release/shredder");
     let dest = which_shredder()?;
-    std::fs::copy(&built, &dest)?;
+    let tmp = dest.with_extension("tmp");
+    std::fs::copy(&built, &tmp)?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&dest)?.permissions();
+        let mut perms = std::fs::metadata(&tmp)?.permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&dest, perms)?;
+        std::fs::set_permissions(&tmp, perms)?;
     }
+
+    std::fs::rename(&tmp, &dest)?;
 
     println!("Done. Built from main, installed to {}.", dest.display());
     Ok(())
