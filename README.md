@@ -2,7 +2,7 @@
 
 Measures the latency advantage of raw Solana shred feeds over confirmed-block RPC.
 
-If your buseiness depends on seeing transactions before your competitors. Shred-probe gives you an estimations of how many milliseconds ahead you are, and whether that edge is holding.
+If your business depends on seeing transactions before your competitors, shred-probe gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
 
 ```
 ==========================================================================================
