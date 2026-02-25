@@ -43,8 +43,8 @@ pub fn run() -> Result<()> {
     println!("{:=<width$}", "");
     println!();
     println!(
-        "{:<20}  {:>9}  {:>5}  {:>5}  {:>5}  {}",
-        "SOURCE", "SHREDS/s", "COV%", "WIN%", "TXS/s", "LEAD µs (mean)"
+        "{:<20}  {:>9}  {:>5}  {:>5}  {:>6}  {}",
+        "SOURCE", "SHREDS/s", "COV%", "WIN%", "TXS/s", "LEAD ms (mean)"
     );
     println!("{:-<width$}", "");
 
@@ -52,22 +52,36 @@ pub fn run() -> Result<()> {
         for s in sources {
             let name = s["name"].as_str().unwrap_or("?");
             let shreds = s["shreds_per_sec"].as_f64().unwrap_or(0.0);
-            let cov = s["coverage_pct"]
-                .as_f64()
-                .map(|p| format!("{:.0}%", p))
-                .unwrap_or_else(|| "—".into());
+            let is_rpc = name == "rpc";
+            let cov = if is_rpc {
+                "—".into()
+            } else {
+                s["coverage_pct"]
+                    .as_f64()
+                    .map(|p| format!("{:.0}%", p.min(100.0)))
+                    .unwrap_or_else(|| "—".into())
+            };
             let win = s["win_rate_pct"]
                 .as_f64()
                 .map(|p| format!("{:.0}%", p))
                 .unwrap_or_else(|| "—".into());
             let txs = s["txs_per_sec"].as_f64().unwrap_or(0.0);
-            let lead = s["lead_time_mean_us"]
-                .as_f64()
-                .map(|u| format!("{:+.0}", u))
-                .unwrap_or_else(|| "—".into());
+            let lead = if is_rpc {
+                "baseline".into()
+            } else {
+                s["lead_time_mean_us"]
+                    .as_f64()
+                    .map(|u| format!("{:+.2}ms", u / 1000.0))
+                    .unwrap_or_else(|| "—".into())
+            };
+            let shreds_str = if is_rpc {
+                "—".into()
+            } else {
+                format!("{:.0}", shreds)
+            };
             println!(
-                "{:<20}  {:>9.0}  {:>5}  {:>5}  {:>5.0}  {}",
-                name, shreds, cov, win, txs, lead
+                "{:<20}  {:>9}  {:>5}  {:>5}  {:>6.0}  {}",
+                name, shreds_str, cov, win, txs, lead
             );
         }
     }

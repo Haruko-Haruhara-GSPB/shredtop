@@ -108,7 +108,7 @@ fn make_snap<'a>(
     let txs_delta = c.txs_decoded.saturating_sub(p.txs_decoded);
 
     let coverage_pct = if c.coverage_shreds_expected > 0 {
-        Some(c.coverage_shreds_seen as f64 / c.coverage_shreds_expected as f64 * 100.0)
+        Some((c.coverage_shreds_seen as f64 / c.coverage_shreds_expected as f64 * 100.0).min(100.0))
     } else {
         None
     };
