@@ -9,6 +9,21 @@ use std::process::Command;
 const UNIT_PATH: &str = "/etc/systemd/system/shredder.service";
 
 pub fn install(config_path: &std::path::Path) -> Result<()> {
+    let already_active = Command::new("systemctl")
+        .args(["is-active", "--quiet", "shredder"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if already_active {
+        println!("Service is already running.");
+        println!();
+        println!("  shredder service stop     — stop the service");
+        println!("  shredder service restart  — restart the service");
+        println!("  shredder monitor          — open live dashboard");
+        return Ok(());
+    }
+
     let binary = std::env::current_exe()?;
     let config_abs = config_path
         .canonicalize()
