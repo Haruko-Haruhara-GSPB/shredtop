@@ -52,8 +52,17 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 
 ## Install
 
+**Pre-built binary (recommended):**
+
 ```bash
 curl -fsSL https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/latest/download/shredder -o /usr/local/bin/shredder && chmod +x /usr/local/bin/shredder
+```
+
+**Build from source (requires Rust 1.81+):**
+
+```bash
+git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git ~/shred-probe
+cd ~/shred-probe && cargo install --path .
 ```
 
 ---
