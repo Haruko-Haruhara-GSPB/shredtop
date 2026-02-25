@@ -5,23 +5,22 @@ Measures the latency advantage of raw Solana shred feeds over confirmed-block RP
 If your business depends on seeing transactions before your competitors, shredder gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
 
 ```
-============================================================================================
-            SHREDDER FEED QUALITY  2026-02-25 22:02:48  (running 1m 23s)
-============================================================================================
+================================================================================================
+                   SHREDDER FEED QUALITY  2026-02-25 23:27:33 UTC
+================================================================================================
 
-SOURCE               SHREDS/s   COV%   WIN%  TXS/s  FEC-REC  LEAD ms (avg / min / max)
---------------------------------------------------------------------------------------------
-bebop                    4200    82%    61%    400       52   +0.32 / +0.18 / +0.64
-jito-shredstream         4100    78%    40%    380       38   +0.27 / +0.15 / +0.59
-rpc                         —     —      —     420        —     baseline
---------------------------------------------------------------------------------------------
+SOURCE               SHREDS/s   COV%  TXS/s   BEAT%   LEAD avg   LEAD min   LEAD max
+------------------------------------------------------------------------------------------------
+bebop                       0      —      0       —          —          —          —
+jito-shredstream        52585   100%     22    100%   +629.8ms   +319.1ms  +1277.9ms
+rpc                         —      —   4065       —   baseline          —          —
+------------------------------------------------------------------------------------------------
 
 EDGE ASSESSMENT:
-  ✓  bebop               AHEAD of RPC  by 0.32ms avg  (12400 samples)
-  ✓  jito-shredstream    AHEAD of RPC  by 0.27ms avg  (9800 samples)
+  ✓  jito-shredstream    AHEAD of RPC  by 629.82ms avg  (10219 samples)
 
---------------------------------------------------------------------------------------------
-COV% = block shreds received  WIN% = txs seen first  LEAD = ms before RPC confirmation
+------------------------------------------------------------------------------------------------
+COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  LEAD = ms before RPC confirms
 ```
 
 ---
@@ -154,10 +153,11 @@ Requires `shredder service start` to be running first.
 |--------|---------|
 | `SHREDS/s` | Raw UDP packets received per second |
 | `COV%` | Fraction of each block's data shreds that arrived |
-| `WIN%` | Fraction of transactions this source decoded first |
 | `TXS/s` | Decoded transactions per second |
-| `FEC-REC` | Shreds reconstructed via Reed-Solomon in this window |
-| `LEAD ms` | Mean / min / max arrival advantage over RPC in milliseconds |
+| `BEAT%` | Of transactions seen by both this feed and RPC, % where this feed arrived first |
+| `LEAD avg` | Mean arrival advantage over RPC in milliseconds |
+| `LEAD min` | Best single-transaction lead time observed |
+| `LEAD max` | Worst single-transaction lead time observed |
 
 ### `shredder status`
 
