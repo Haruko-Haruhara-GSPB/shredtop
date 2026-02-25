@@ -62,6 +62,14 @@ cd shred-probe && cargo install --path .
 
 ---
 
+## Upgrade
+
+```bash
+shred-probe upgrade
+```
+
+---
+
 ## Uninstall
 
 ```bash

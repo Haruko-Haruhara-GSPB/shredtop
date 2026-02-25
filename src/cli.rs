@@ -44,4 +44,7 @@ pub enum Commands {
 
     /// Print an example probe.toml to stdout
     Init,
+
+    /// Upgrade shred-probe to the latest version from GitHub
+    Upgrade,
 }

@@ -22,9 +22,9 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Load config (except for `init` which doesn't need it)
+    // Load config (except for commands that don't need it)
     let config = match &cli.command {
-        Commands::Init => None,
+        Commands::Init | Commands::Upgrade => None,
         _ => {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
@@ -41,6 +41,19 @@ fn main() -> Result<()> {
         Commands::Init => {
             let example = config::ProbeConfig::default_example();
             print!("{}", toml::to_string_pretty(&example)?);
+        }
+        Commands::Upgrade => {
+            let status = std::process::Command::new("cargo")
+                .args([
+                    "install",
+                    "--git",
+                    "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git",
+                    "--force",
+                ])
+                .status()?;
+            if !status.success() {
+                anyhow::bail!("upgrade failed");
+            }
         }
         Commands::Discover => {
             discover::run(config.as_ref().unwrap(), &cli.config)?;
