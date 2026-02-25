@@ -217,7 +217,8 @@ shredder upgrade
 ## Uninstall
 
 ```bash
-rm /usr/local/bin/shredder probe.toml
+rm /usr/local/bin/shredder
+rm -rf ~/shred-probe probe.toml
 ```
 
 ---
