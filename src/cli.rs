@@ -45,8 +45,12 @@ pub enum Commands {
     /// Print an example probe.toml to stdout
     Init,
 
-    /// Upgrade shredder to the latest version from GitHub
-    Upgrade,
+    /// Upgrade shredder to the latest release, or rebuild from source
+    Upgrade {
+        /// Pull main branch and rebuild from source instead of downloading a release binary
+        #[clap(long)]
+        source: bool,
+    },
 
     /// Run background data collection, writing metrics to a log file
     Run {

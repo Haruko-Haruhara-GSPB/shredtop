@@ -4,6 +4,8 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::process::Command;
 
+const REPO_DIR: &str = "~/shred-probe";
+
 const RELEASES_API: &str =
     "https://api.github.com/repos/Haruko-Haruhara-GSPB/shred-probe/releases/latest";
 const DOWNLOAD_URL: &str =
@@ -53,6 +55,54 @@ pub fn run() -> Result<()> {
     }
 
     println!("Done. {} installed to {}.", tag, dest.display());
+    Ok(())
+}
+
+/// Pull main and rebuild from source. Skips the release pipeline entirely.
+/// Useful during active development when releases haven't caught up.
+pub fn run_from_source() -> Result<()> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let repo = std::path::PathBuf::from(&home).join("shred-probe");
+    let repo_str = repo.to_str().unwrap();
+
+    if repo.exists() {
+        println!("Pulling latest main...");
+        let ok = Command::new("git")
+            .args(["-C", repo_str, "pull", "origin", "main"])
+            .status()?
+            .success();
+        anyhow::ensure!(ok, "git pull failed");
+    } else {
+        println!("Cloning to {}...", repo_str);
+        let ok = Command::new("git")
+            .args(["clone", "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git", repo_str])
+            .status()?
+            .success();
+        anyhow::ensure!(ok, "git clone failed");
+    }
+
+    println!("Building...");
+    let ok = Command::new("cargo")
+        .args(["build", "--release", "--quiet"])
+        .current_dir(&repo)
+        .status()?
+        .success();
+    anyhow::ensure!(ok, "cargo build failed");
+
+    // Copy the built binary over the currently installed one
+    let built = repo.join("target/release/shredder");
+    let dest = which_shredder()?;
+    std::fs::copy(&built, &dest)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&dest)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&dest, perms)?;
+    }
+
+    println!("Done. Built from main, installed to {}.", dest.display());
     Ok(())
 }
 

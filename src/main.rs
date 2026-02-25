@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     // Load config (except for commands that don't need it)
     let config = match &cli.command {
-        Commands::Init | Commands::Upgrade | Commands::Status | Commands::Service { .. } => None,
+        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } => None,
         _ => {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
@@ -46,8 +46,12 @@ fn main() -> Result<()> {
             let example = config::ProbeConfig::default_example();
             print!("{}", toml::to_string_pretty(&example)?);
         }
-        Commands::Upgrade => {
-            upgrade::run()?;
+        Commands::Upgrade { source } => {
+            if source {
+                upgrade::run_from_source()?;
+            } else {
+                upgrade::run()?;
+            }
         }
         Commands::Discover => {
             discover::run(config.as_ref().unwrap(), &cli.config)?;
