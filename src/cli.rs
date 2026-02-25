@@ -75,16 +75,14 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum ServiceAction {
-    /// Install the systemd unit file
-    Install,
-    /// Remove the systemd unit file
-    Uninstall,
-    /// Start the service
+    /// Install the unit file, enable on boot, and start — run this once to set up
     Start,
     /// Stop the service
     Stop,
     /// Restart the service
     Restart,
+    /// Remove the unit file and disable the service
+    Uninstall,
     /// Show service status
     Status,
     /// Enable the service to start on boot

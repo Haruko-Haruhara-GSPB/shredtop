@@ -69,10 +69,9 @@ fn main() -> Result<()> {
             status::run()?;
         }
         Commands::Service { action } => match action {
-            ServiceAction::Install => service::install(&cli.config)?,
-            ServiceAction::Uninstall => service::uninstall()?,
-            ServiceAction::Start => service::control("start")?,
+            ServiceAction::Start => service::install(&cli.config)?,
             ServiceAction::Stop => service::control("stop")?,
+            ServiceAction::Uninstall => service::uninstall()?,
             ServiceAction::Restart => service::control("restart")?,
             ServiceAction::Status => service::control("status")?,
             ServiceAction::Enable => service::control("enable")?,
