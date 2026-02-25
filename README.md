@@ -240,20 +240,12 @@ To subscribe to a multicast group over DoubleZero refer to the [DoubleZero docum
 
 ## Uninstall
 
-Stop and remove the service:
 ```bash
-shredder service uninstall
-```
-
-Remove the binary:
-```bash
-rm /usr/local/bin/shredder        # if installed via curl
-cargo uninstall shredder          # if installed via cargo
-```
-
-Remove config and source:
-```bash
-rm -rf ~/shred-probe probe.toml
+shredder service uninstall                    # stop, disable, remove unit file
+cargo uninstall shredder                      # remove binary (if installed via cargo)
+rm /usr/local/bin/shredder                    # remove binary (if installed via curl)
+rm -f /var/log/shredder.jsonl                 # remove metrics log
+rm -rf ~/shred-probe probe.toml               # remove source and config
 ```
 
 ---
