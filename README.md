@@ -67,21 +67,7 @@ cd ~/shred-probe && cargo install --path .
 
 ---
 
-## Upgrade
 
-```bash
-shredder upgrade
-```
-
----
-
-## Uninstall
-
-```bash
-rm /usr/local/bin/shredder probe.toml
-```
-
----
 
 ## Quick start
 
@@ -220,7 +206,21 @@ Prints a default `probe.toml` to stdout.
 To subscribe to a multicast group over DoubleZero refer to the [DoubleZero documentation](https://docs.malbeclabs.com/Multicast%20Connection/).
 
 ---
+## Upgrade
 
+```bash
+shredder upgrade
+```
+
+---
+
+## Uninstall
+
+```bash
+rm /usr/local/bin/shredder probe.toml
+```
+
+---
 ## License
 
 MIT
