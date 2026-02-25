@@ -52,7 +52,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
 
     // Restore screen on Ctrl-C
     RUNNING.store(true, Ordering::SeqCst);
-    unsafe { libc::signal(libc::SIGINT, handle_sigint as libc::sighandler_t) };
+    unsafe { libc::signal(libc::SIGINT, handle_sigint as *const () as libc::sighandler_t) };
 
     let interval = Duration::from_secs(interval_secs);
     let mut prev_snapshots: Vec<SourceMetricsSnapshot> =
