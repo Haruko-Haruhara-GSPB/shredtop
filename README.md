@@ -216,8 +216,18 @@ shredder upgrade
 
 ## Uninstall
 
+If installed via `curl`:
 ```bash
 rm /usr/local/bin/shredder
+```
+
+If installed via `cargo install`:
+```bash
+cargo uninstall shredder
+```
+
+Remove config and source:
+```bash
 rm -rf ~/shred-probe probe.toml
 ```
 
