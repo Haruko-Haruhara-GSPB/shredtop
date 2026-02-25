@@ -68,19 +68,19 @@ cargo build --release
 
 ## Quick start
 
-**Step 1 — run discover** to detect active feeds and write `probe.toml`:
+Detect active feeds and write `probe.toml`:
 
 ```bash
 ./target/release/shred-probe discover
 ```
 
-**Step 2 — live dashboard** (Ctrl-C to stop):
+Live dashboard:
 
 ```bash
 ./target/release/shred-probe monitor
 ```
 
-**Step 3 — 5-minute benchmark, JSON output:**
+Timed benchmark, JSON output:
 
 ```bash
 ./target/release/shred-probe bench --duration 300 --output report.json
