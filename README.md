@@ -69,18 +69,27 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 ## Quick start
 
+**Step 1 — generate a config:**
+
 ```bash
-# Generate a default config
 ./target/release/shred-probe init > probe.toml
+```
 
-# Edit probe.toml: set your interface name and RPC URL
-# Then check what's reachable
+**Step 2 — edit `probe.toml`** to set your interface name and RPC URL, then check what's reachable:
+
+```bash
 ./target/release/shred-probe discover
+```
 
-# Live dashboard (refreshes every 5s)
+**Step 3 — live dashboard** (Ctrl-C to stop):
+
+```bash
 ./target/release/shred-probe monitor
+```
 
-# 5-minute benchmark, JSON output
+**Step 4 — 5-minute benchmark, JSON output:**
+
+```bash
 ./target/release/shred-probe bench --duration 300 --output report.json
 ```
 
