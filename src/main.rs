@@ -47,7 +47,7 @@ fn main() -> Result<()> {
                 .args([
                     "install",
                     "--git",
-                    "https://github.com/Haruko-Haruhara-GSPB/shredder.git",
+                    "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git",
                     "--force",
                 ])
                 .status()?;
