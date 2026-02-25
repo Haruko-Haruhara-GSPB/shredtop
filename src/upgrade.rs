@@ -4,8 +4,6 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::process::Command;
 
-const REPO_DIR: &str = "~/shred-probe";
-
 const RELEASES_API: &str =
     "https://api.github.com/repos/Haruko-Haruhara-GSPB/shred-probe/releases/latest";
 const DOWNLOAD_URL: &str =
