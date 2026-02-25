@@ -62,6 +62,18 @@ cd shred-probe && cargo install --path .
 
 ---
 
+## Uninstall
+
+```bash
+cargo uninstall shred-probe
+```
+
+```bash
+rm -rf probe.toml shred-probe/
+```
+
+---
+
 ## Quick start
 
 Detect active feeds and write `probe.toml`:
