@@ -1,12 +1,12 @@
-# shred-probe
+# shredder
 
 Measures the latency advantage of raw Solana shred feeds over confirmed-block RPC.
 
-If your business depends on seeing transactions before your competitors, shred-probe gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
+If your business depends on seeing transactions before your competitors, shredder gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
 
 ```
 ==========================================================================================
-           SHRED-PROBE FEED QUALITY DASHBOARD  2026-02-25 14:32:05
+                SHREDDER FEED QUALITY DASHBOARD  2026-02-25 14:32:05
 ==========================================================================================
 
 SOURCE                 SHREDS/s   COV%   WIN%  TXS/s  FEC-REC  LEAD µs (mean / min / max)
@@ -27,7 +27,7 @@ EDGE:
 
 Solana leaders distribute blocks as shreds over UDP. Feed providers relay those shreds to your machine before the block is confirmed. 
 
-shred-probe:
+shredder:
 
 1. Binds a UDP socket on your multicast interface and receives raw shreds
 2. Parses the Agave wire format, runs Reed-Solomon FEC recovery on partial FEC sets
@@ -65,7 +65,7 @@ cd shred-probe && cargo install --path .
 ## Upgrade
 
 ```bash
-shred-probe upgrade
+shredder upgrade
 ```
 
 ---
@@ -73,7 +73,7 @@ shred-probe upgrade
 ## Uninstall
 
 ```bash
-cargo uninstall shred-probe
+cargo uninstall shredder
 ```
 
 ```bash
@@ -87,19 +87,19 @@ rm -rf probe.toml shred-probe/
 Detect active feeds and write `probe.toml`:
 
 ```bash
-shred-probe discover
+shredder discover
 ```
 
 Live dashboard:
 
 ```bash
-shred-probe monitor
+shredder monitor
 ```
 
 Timed benchmark, JSON output:
 
 ```bash
-shred-probe bench --duration 300 --output report.json
+shredder bench --duration 300 --output report.json
 ```
 
 ---
@@ -145,11 +145,11 @@ Optional per-source fields:
 
 ## Commands
 
-### `shred-probe discover`
+### `shredder discover`
 
 Diagnostic snapshot before you start. Shows DoubleZero group availability, active multicast memberships on the machine, UDP sockets bound to multicast addresses, and configured sources from `probe.toml`.
 
-### `shred-probe monitor [--interval N]`
+### `shredder monitor [--interval N]`
 
 Live-updating dashboard. Refreshes every `N` seconds (default 5). Columns:
 
@@ -164,7 +164,7 @@ Live-updating dashboard. Refreshes every `N` seconds (default 5). Columns:
 
 Press Ctrl-C to stop.
 
-### `shred-probe bench --duration N [--output FILE]`
+### `shredder bench --duration N [--output FILE]`
 
 Runs for `N` seconds, then writes a JSON report. If `--output` is omitted, prints to stdout. Human-readable summary goes to stderr.
 
@@ -191,7 +191,7 @@ Runs for `N` seconds, then writes a JSON report. If `--output` is omitted, print
 }
 ```
 
-### `shred-probe init`
+### `shredder init`
 
 Prints a default `probe.toml` to stdout.
 
@@ -199,7 +199,7 @@ Prints a default `probe.toml` to stdout.
 
 ## Understanding the numbers
 
-**Coverage %** — DoubleZero relays only the tail FEC sets of each block, not the full block. 80–90% coverage is normal and expected. shred-probe handles mid-stream joins correctly (no waiting for shred index 0).
+**Coverage %** — DoubleZero relays only the tail FEC sets of each block, not the full block. 80–90% coverage is normal and expected. shredder handles mid-stream joins correctly (no waiting for shred index 0).
 
 **Win rate %** — how often this source delivers a transaction before all other sources. With two shred feeds and one RPC, a healthy setup shows the faster shred source winning 55–65% of transactions.
 

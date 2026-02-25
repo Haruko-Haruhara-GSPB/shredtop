@@ -1,4 +1,4 @@
-//! `shred-probe bench` — timed benchmark with structured JSON output.
+//! `shredder bench` — timed benchmark with structured JSON output.
 //!
 //! Runs all configured sources for a fixed duration, then emits a JSON report
 //! with per-source statistics including lead-time histogram, win rate, FEC recovery,
@@ -44,12 +44,12 @@ pub struct SourceReport {
 pub fn run(config: &ProbeConfig, duration_secs: u64, output: Option<PathBuf>) -> Result<()> {
     if config.sources.is_empty() {
         anyhow::bail!(
-            "no sources configured — run `shred-probe init > probe.toml` to create a config"
+            "no sources configured — run `shredder init > probe.toml` to create a config"
         );
     }
 
     eprintln!(
-        "shred-probe bench — running for {}s with {} source(s)...",
+        "shredder bench — running for {}s with {} source(s)...",
         duration_secs,
         config.sources.len()
     );

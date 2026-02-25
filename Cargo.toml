@@ -46,7 +46,7 @@ chrono = "0.4"
 # ─── Binary crate ────────────────────────────────────────────────────────────
 
 [package]
-name = "shred-probe"
+name = "shredder"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -54,7 +54,7 @@ description = "Solana shred feed latency benchmark — measure your edge before 
 license = "MIT"
 
 [[bin]]
-name = "shred-probe"
+name = "shredder"
 path = "src/main.rs"
 
 [dependencies]

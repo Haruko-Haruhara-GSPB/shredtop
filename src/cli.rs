@@ -1,11 +1,11 @@
-//! CLI definitions for shred-probe.
+//! CLI definitions for shredder.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[clap(
-    name = "shred-probe",
+    name = "shredder",
     version,
     about = "Solana shred feed latency benchmark\n\nMeasure your edge: how many milliseconds ahead of confirmed RPC do DoubleZero or Jito ShredStream feeds deliver transactions?",
     long_about = None
@@ -45,6 +45,6 @@ pub enum Commands {
     /// Print an example probe.toml to stdout
     Init,
 
-    /// Upgrade shred-probe to the latest version from GitHub
+    /// Upgrade shredder to the latest version from GitHub
     Upgrade,
 }

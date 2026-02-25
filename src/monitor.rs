@@ -1,4 +1,4 @@
-//! `shred-probe monitor` — live-updating feed quality dashboard.
+//! `shredder monitor` — live-updating feed quality dashboard.
 //!
 //! Starts all configured sources and prints a rolling quality report every
 //! `interval` seconds. Uses ANSI escape codes to clear and redraw the terminal
@@ -17,7 +17,7 @@ use crate::config::{ProbeConfig, SourceEntry};
 pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
     if config.sources.is_empty() {
         anyhow::bail!(
-            "no sources configured — run `shred-probe init > probe.toml` to create a config"
+            "no sources configured — run `shredder init > probe.toml` to create a config"
         );
     }
 
@@ -37,7 +37,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
     });
 
     eprintln!(
-        "shred-probe monitor — {} source(s), refreshing every {}s — Ctrl-C to stop",
+        "shredder monitor — {} source(s), refreshing every {}s — Ctrl-C to stop",
         all_metrics.len(),
         interval_secs
     );

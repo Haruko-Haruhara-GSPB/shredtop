@@ -1,7 +1,7 @@
-//! shred-probe — Solana shred feed latency benchmark.
+//! shredder — Solana shred feed latency benchmark.
 //!
 //! Measures the latency advantage of DoubleZero / Jito ShredStream raw shred
-//! feeds over confirmed-block RPC polling. Run `shred-probe --help` for usage.
+//! feeds over confirmed-block RPC polling. Run `shredder --help` for usage.
 
 use anyhow::Result;
 use clap::Parser;
@@ -29,7 +29,7 @@ fn main() -> Result<()> {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
                 eprintln!(
-                    "Created '{}' — run `shred-probe discover` to populate it.",
+                    "Created '{}' — run `shredder discover` to populate it.",
                     cli.config.display()
                 );
             }
@@ -47,7 +47,7 @@ fn main() -> Result<()> {
                 .args([
                     "install",
                     "--git",
-                    "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git",
+                    "https://github.com/Haruko-Haruhara-GSPB/shredder.git",
                     "--force",
                 ])
                 .status()?;

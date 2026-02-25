@@ -1,4 +1,4 @@
-//! `probe.toml` configuration for shred-probe.
+//! `probe.toml` configuration for shredder.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

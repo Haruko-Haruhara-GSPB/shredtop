@@ -1,4 +1,4 @@
-# Agent Instructions — shred-probe
+# Agent Instructions — shredder
 
 ## What this is
 Standalone Solana shred feed latency benchmark. Measures the millisecond advantage of raw shred feeds (DoubleZero, Jito ShredStream) over confirmed-block RPC polling.

@@ -1,4 +1,4 @@
-//! `shred-probe discover` — show multicast memberships and configured sources.
+//! `shredder discover` — show multicast memberships and configured sources.
 //!
 //! Queries the kernel for active multicast group memberships, lists configured
 //! sources from probe.toml, and shows DoubleZero group metadata if the CLI is
@@ -75,7 +75,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
         println!();
         println!("Tip: to subscribe to a DoubleZero feed:");
         println!("  doublezero connect multicast --subscribe <code>");
-        println!("  Then re-run `shred-probe discover`");
+        println!("  Then re-run `shredder discover`");
     }
 
     Ok(())
