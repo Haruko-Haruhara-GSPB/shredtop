@@ -36,6 +36,8 @@ pub struct SourceMetrics {
 
     // Lead time relative to RPC (µs, positive = shred arrived before RPC)
     pub lead_time_count: AtomicU64,
+    /// Number of lead-time samples where this source beat RPC (lead_time > 0)
+    pub lead_wins: AtomicU64,
     pub lead_time_sum_us: AtomicI64,
     /// Initialised to i64::MAX; updated via CAS loop
     pub lead_time_min_us: AtomicI64,
@@ -62,6 +64,7 @@ pub struct SourceMetricsSnapshot {
     pub txs_first: u64,
     pub txs_duplicate: u64,
     pub lead_time_count: u64,
+    pub lead_wins: u64,
     pub lead_time_sum_us: i64,
     pub lead_time_min_us: i64,
     pub lead_time_max_us: i64,
@@ -86,6 +89,7 @@ impl SourceMetrics {
             txs_first: AtomicU64::new(0),
             txs_duplicate: AtomicU64::new(0),
             lead_time_count: AtomicU64::new(0),
+            lead_wins: AtomicU64::new(0),
             lead_time_sum_us: AtomicI64::new(0),
             lead_time_min_us: AtomicI64::new(i64::MAX),
             lead_time_max_us: AtomicI64::new(i64::MIN),
@@ -106,6 +110,9 @@ impl SourceMetrics {
             return;
         }
         self.lead_time_count.fetch_add(1, Relaxed);
+        if us > 0 {
+            self.lead_wins.fetch_add(1, Relaxed);
+        }
         self.lead_time_sum_us.fetch_add(us, Relaxed);
 
         let mut cur = self.lead_time_min_us.load(Relaxed);
@@ -172,6 +179,7 @@ impl SourceMetrics {
             txs_first: self.txs_first.load(Relaxed),
             txs_duplicate: self.txs_duplicate.load(Relaxed),
             lead_time_count: self.lead_time_count.load(Relaxed),
+            lead_wins: self.lead_wins.load(Relaxed),
             lead_time_sum_us: self.lead_time_sum_us.load(Relaxed),
             lead_time_min_us: self.lead_time_min_us.load(Relaxed),
             lead_time_max_us: self.lead_time_max_us.load(Relaxed),

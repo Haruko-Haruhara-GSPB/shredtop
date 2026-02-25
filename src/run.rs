@@ -29,7 +29,8 @@ struct SourceSnap<'a> {
     name: &'a str,
     shreds_per_sec: f64,
     coverage_pct: Option<f64>,
-    win_rate_pct: Option<f64>,
+    /// % of matched transactions where this feed beat RPC (lead_time > 0)
+    beat_rpc_pct: Option<f64>,
     lead_time_mean_us: Option<f64>,
     lead_time_min_us: Option<i64>,
     lead_time_max_us: Option<i64>,
@@ -113,13 +114,10 @@ fn make_snap<'a>(
         None
     };
 
-    let win_rate_pct = {
-        let total = c.txs_first + c.txs_duplicate;
-        if total > 0 {
-            Some(c.txs_first as f64 / total as f64 * 100.0)
-        } else {
-            None
-        }
+    let beat_rpc_pct = if c.lead_time_count > 0 {
+        Some(c.lead_wins as f64 / c.lead_time_count as f64 * 100.0)
+    } else {
+        None
     };
 
     let (lead_mean, lead_min, lead_max) = if c.lead_time_count > 0 {
@@ -143,7 +141,7 @@ fn make_snap<'a>(
         name: c.name,
         shreds_per_sec: shreds_delta as f64 / elapsed,
         coverage_pct,
-        win_rate_pct,
+        beat_rpc_pct,
         lead_time_mean_us: lead_mean,
         lead_time_min_us: lead_min,
         lead_time_max_us: lead_max,

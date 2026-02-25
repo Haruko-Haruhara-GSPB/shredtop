@@ -34,7 +34,7 @@ pub fn run() -> Result<()> {
         .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| "unknown".into());
 
-    let width = 90;
+    let width = 96;
     println!("{:=<width$}", "");
     println!(
         "{:^width$}",
@@ -43,16 +43,21 @@ pub fn run() -> Result<()> {
     println!("{:=<width$}", "");
     println!();
     println!(
-        "{:<20}  {:>9}  {:>5}  {:>5}  {:>6}  {}",
-        "SOURCE", "SHREDS/s", "COV%", "WIN%", "TXS/s", "LEAD ms (mean)"
+        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}",
+        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD min", "LEAD max",
     );
     println!("{:-<width$}", "");
 
     if let Some(sources) = entry["sources"].as_array() {
         for s in sources {
             let name = s["name"].as_str().unwrap_or("?");
-            let shreds = s["shreds_per_sec"].as_f64().unwrap_or(0.0);
             let is_rpc = name == "rpc";
+
+            let shreds_str = if is_rpc {
+                "—".into()
+            } else {
+                format!("{:.0}", s["shreds_per_sec"].as_f64().unwrap_or(0.0))
+            };
             let cov = if is_rpc {
                 "—".into()
             } else {
@@ -61,27 +66,33 @@ pub fn run() -> Result<()> {
                     .map(|p| format!("{:.0}%", p.min(100.0)))
                     .unwrap_or_else(|| "—".into())
             };
-            let win = s["win_rate_pct"]
-                .as_f64()
-                .map(|p| format!("{:.0}%", p))
-                .unwrap_or_else(|| "—".into());
             let txs = s["txs_per_sec"].as_f64().unwrap_or(0.0);
-            let lead = if is_rpc {
-                "baseline".into()
-            } else {
-                s["lead_time_mean_us"]
-                    .as_f64()
-                    .map(|u| format!("{:+.2}ms", u / 1000.0))
-                    .unwrap_or_else(|| "—".into())
-            };
-            let shreds_str = if is_rpc {
+            let beat = if is_rpc {
                 "—".into()
             } else {
-                format!("{:.0}", shreds)
+                s["beat_rpc_pct"]
+                    .as_f64()
+                    .map(|p| format!("{:.0}%", p))
+                    .unwrap_or_else(|| "—".into())
             };
+            let (avg_str, min_str, max_str) = if is_rpc {
+                ("baseline".into(), "—".into(), "—".into())
+            } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
+                let avg = format!("{:+.1}ms", mean_us / 1000.0);
+                let min = s["lead_time_min_us"].as_f64()
+                    .map(|v| format!("{:+.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                let max = s["lead_time_max_us"].as_f64()
+                    .map(|v| format!("{:+.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                (avg, min, max)
+            } else {
+                ("—".into(), "—".into(), "—".into())
+            };
+
             println!(
-                "{:<20}  {:>9}  {:>5}  {:>5}  {:>6.0}  {}",
-                name, shreds_str, cov, win, txs, lead
+                "{:<20}  {:>9}  {:>5}  {:>6.0}  {:>6}  {:>9}  {:>9}  {:>9}",
+                name, shreds_str, cov, txs, beat, avg_str, min_str, max_str,
             );
         }
     }

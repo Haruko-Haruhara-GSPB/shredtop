@@ -88,7 +88,7 @@ fn read_last_entry(path: &str) -> Option<serde_json::Value> {
 }
 
 fn draw_dashboard(entry: &serde_json::Value) -> usize {
-    const W: usize = 92;
+    const W: usize = 96;
     let mut out: Vec<String> = Vec::new();
 
     // Timestamp from log entry
@@ -107,8 +107,8 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
     // Column headers
     out.push(format!(
-        "{:<20}  {:>9}  {:>5}  {:>5}  {:>6}  LEAD ms (avg / min / max)",
-        "SOURCE", "SHREDS/s", "COV%", "WIN%", "TXS/s",
+        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}",
+        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD min", "LEAD max",
     ));
     out.push("-".repeat(W));
 
@@ -134,30 +134,35 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
                 .map(|p| format!("{:.0}%", p.min(100.0)))
                 .unwrap_or_else(|| "—".into());
 
-            let win_str = s["win_rate_pct"]
-                .as_f64()
-                .map(|p| format!("{:.0}%", p))
-                .unwrap_or_else(|| "—".into());
+            let beat_str = if is_rpc {
+                "—".into()
+            } else {
+                s["beat_rpc_pct"]
+                    .as_f64()
+                    .map(|p| format!("{:.0}%", p))
+                    .unwrap_or_else(|| "—".into())
+            };
 
             let txs_str = format!("{:.0}", s["txs_per_sec"].as_f64().unwrap_or(0.0));
 
-            let lead_str = if is_rpc {
-                "  baseline".into()
+            let (avg_str, min_str, max_str) = if is_rpc {
+                ("baseline".into(), "—".into(), "—".into())
             } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
-                let avg_ms = mean_us / 1000.0;
-                let min_ms = s["lead_time_min_us"].as_f64().map(|v| v / 1000.0);
-                let max_ms = s["lead_time_max_us"].as_f64().map(|v| v / 1000.0);
-                match (min_ms, max_ms) {
-                    (Some(mn), Some(mx)) => format!("{:+.2} / {:+.2} / {:+.2}", avg_ms, mn, mx),
-                    _ => format!("{:+.2}", avg_ms),
-                }
+                let avg = format!("{:+.1}ms", mean_us / 1000.0);
+                let min = s["lead_time_min_us"].as_f64()
+                    .map(|v| format!("{:+.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                let max = s["lead_time_max_us"].as_f64()
+                    .map(|v| format!("{:+.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                (avg, min, max)
             } else {
-                "  —".into()
+                ("—".into(), "—".into(), "—".into())
             };
 
             out.push(format!(
-                "{:<20}  {:>9}  {:>5}  {:>5}  {:>6}  {}",
-                name, shreds_str, cov_str, win_str, txs_str, lead_str,
+                "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}",
+                name, shreds_str, cov_str, txs_str, beat_str, avg_str, min_str, max_str,
             ));
 
             // Edge assessment for shred sources
@@ -203,8 +208,8 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     out.push(String::new());
     out.push("-".repeat(W));
     out.push(
-        "COV% = block shreds received  WIN% = txs seen first  \
-         LEAD = ms before RPC confirmation"
+        "COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  \
+         LEAD = ms before RPC confirms"
             .into(),
     );
 
