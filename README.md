@@ -53,8 +53,8 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 ## Install
 
 ```bash
-git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git
-cd shred-probe
+cd ~ && git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git
+cd ~/shred-probe
 git checkout -q $(git describe --tags --abbrev=0)
 CARGO_TERM_PROGRESS_WHEN=always cargo install --path .
 ```
