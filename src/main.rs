@@ -27,11 +27,9 @@ fn main() -> Result<()> {
         Commands::Init => None,
         _ => {
             if !cli.config.exists() {
-                let example = config::ProbeConfig::default_example();
-                let toml = toml::to_string_pretty(&example)?;
-                std::fs::write(&cli.config, &toml)?;
+                std::fs::write(&cli.config, b"")?;
                 eprintln!(
-                    "Created '{}' with default sources — edit it to set your interface and RPC URL.",
+                    "Created '{}' — run `shred-probe discover` to populate it.",
                     cli.config.display()
                 );
             }
