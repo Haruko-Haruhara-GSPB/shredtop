@@ -12,6 +12,7 @@ mod cli;
 mod config;
 mod discover;
 mod monitor;
+mod upgrade;
 
 use cli::{Cli, Commands};
 
@@ -43,17 +44,7 @@ fn main() -> Result<()> {
             print!("{}", toml::to_string_pretty(&example)?);
         }
         Commands::Upgrade => {
-            let status = std::process::Command::new("cargo")
-                .args([
-                    "install",
-                    "--git",
-                    "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git",
-                    "--force",
-                ])
-                .status()?;
-            if !status.success() {
-                anyhow::bail!("upgrade failed");
-            }
+            upgrade::run()?;
         }
         Commands::Discover => {
             discover::run(config.as_ref().unwrap(), &cli.config)?;
