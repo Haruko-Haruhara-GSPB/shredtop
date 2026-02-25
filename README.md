@@ -68,9 +68,7 @@ cargo build --release
 
 ## Quick start
 
-**Step 1 — edit `probe.toml`** to set your interface name and RPC URL.
-
-On first run, the binary creates `probe.toml` automatically. Check what's reachable:
+**Step 1 — run discover** to detect active feeds and write `probe.toml`:
 
 ```bash
 ./target/release/shred-probe discover

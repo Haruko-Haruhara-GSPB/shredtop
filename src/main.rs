@@ -45,7 +45,7 @@ fn main() -> Result<()> {
             print!("{}", toml::to_string_pretty(&example)?);
         }
         Commands::Discover => {
-            discover::run(config.as_ref().unwrap())?;
+            discover::run(config.as_ref().unwrap(), &cli.config)?;
         }
         Commands::Monitor { interval } => {
             monitor::run(config.as_ref().unwrap(), interval)?;
