@@ -83,6 +83,8 @@ pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
     // Exit alternate screen — terminal restores previous content
     print!("\x1b[?1049l");
     std::io::stdout().flush().ok();
+
+    Ok(())
 }
 
 fn print_dashboard(
