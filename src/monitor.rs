@@ -28,7 +28,6 @@ pub fn run(interval_secs: u64) -> Result<()> {
             eprintln!("No metrics data found at {}.", DEFAULT_LOG);
             eprintln!();
             eprintln!("Start the background service first:");
-            eprintln!("  shredder service install");
             eprintln!("  shredder service start");
             eprintln!();
             eprintln!("Then run `shredder monitor` again.");
