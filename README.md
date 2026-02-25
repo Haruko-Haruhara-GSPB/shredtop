@@ -46,7 +46,7 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 - Linux x86_64
 - A shred feed
 - A local Solana RPC node (for the baseline comparison)
-- Rust 1.81+
+- Rust 1.81+ _(build from source only)_
 
 ---
 
