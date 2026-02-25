@@ -38,20 +38,12 @@ impl ShredReceiver {
     ) -> Result<Self> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         socket.set_reuse_address(true)?;
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::io::AsRawFd;
-            unsafe {
-                let val: libc::c_int = 1;
-                libc::setsockopt(
-                    socket.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_REUSEPORT,
-                    &val as *const _ as *const libc::c_void,
-                    std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-                );
-            }
-        }
+        // Note: SO_REUSEPORT is intentionally NOT set. With SO_REUSEPORT, the
+        // kernel hashes (src_ip, src_port) to distribute packets across sockets
+        // sharing a port. Because all DoubleZero shreds arrive from the same relay
+        // IP:port, every packet hashes to the same socket — one source gets all
+        // traffic and the other gets none. SO_REUSEADDR alone is sufficient here:
+        // each socket binds to a distinct multicast address so they don't conflict.
 
         // Parse multicast address first so we can bind to it directly.
         // Binding to the multicast address (not UNSPECIFIED) ensures this socket

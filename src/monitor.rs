@@ -6,11 +6,20 @@
 
 use anyhow::Result;
 use chrono::Local;
+use libc;
 use shred_ingest::{
     DecodedTx, FanInSource, RpcTxSource, ShredTxSource, SourceMetrics, SourceMetricsSnapshot,
 };
+use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+static RUNNING: AtomicBool = AtomicBool::new(true);
+
+extern "C" fn handle_sigint(_: libc::c_int) {
+    RUNNING.store(false, Ordering::SeqCst);
+}
 
 use crate::config::{ProbeConfig, SourceEntry};
 
@@ -36,19 +45,26 @@ pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
         for _ in out_rx {}
     });
 
-    eprintln!(
-        "shredder monitor — {} source(s), refreshing every {}s — Ctrl-C to stop",
-        all_metrics.len(),
-        interval_secs
-    );
+    // Enter alternate screen buffer — preserves terminal history so Ctrl-C
+    // returns the user to whatever was on screen before (e.g. discover output).
+    print!("\x1b[?1049h");
+    std::io::stdout().flush().ok();
+
+    // Restore screen on Ctrl-C
+    RUNNING.store(true, Ordering::SeqCst);
+    unsafe { libc::signal(libc::SIGINT, handle_sigint as libc::sighandler_t) };
 
     let interval = Duration::from_secs(interval_secs);
     let mut prev_snapshots: Vec<SourceMetricsSnapshot> =
         all_metrics.iter().map(|m| m.snapshot()).collect();
     let mut prev_time = Instant::now();
 
-    loop {
+    while RUNNING.load(Ordering::SeqCst) {
         std::thread::sleep(interval);
+
+        if !RUNNING.load(Ordering::SeqCst) {
+            break;
+        }
 
         let now = Instant::now();
         let elapsed_secs = now.duration_since(prev_time).as_secs_f64();
@@ -57,12 +73,16 @@ pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
         let curr_snapshots: Vec<SourceMetricsSnapshot> =
             all_metrics.iter().map(|m| m.snapshot()).collect();
 
-        // Move cursor to top-left and clear screen for in-place redraw
         print!("\x1b[H\x1b[2J");
         print_dashboard(&curr_snapshots, &prev_snapshots, elapsed_secs);
+        std::io::stdout().flush().ok();
 
         prev_snapshots = curr_snapshots;
     }
+
+    // Exit alternate screen — terminal restores previous content
+    print!("\x1b[?1049l");
+    std::io::stdout().flush().ok();
 }
 
 fn print_dashboard(
