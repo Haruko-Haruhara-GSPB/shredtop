@@ -61,8 +61,8 @@ curl -fsSL https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/latest/d
 **Build from source (requires Rust 1.81+):**
 
 ```bash
-git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git ~/shred-probe
-cd ~/shred-probe && cargo install --path .
+git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git ~/shred-probe 2>/dev/null || git -C ~/shred-probe pull origin main
+cargo install --path ~/shred-probe
 ```
 
 ---
