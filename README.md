@@ -57,11 +57,7 @@ git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git
 ```
 
 ```bash
-cd shred-probe
-```
-
-```bash
-cargo build --release
+cd shred-probe && cargo install --path .
 ```
 
 ---
@@ -71,19 +67,19 @@ cargo build --release
 Detect active feeds and write `probe.toml`:
 
 ```bash
-./target/release/shred-probe discover
+shred-probe discover
 ```
 
 Live dashboard:
 
 ```bash
-./target/release/shred-probe monitor
+shred-probe monitor
 ```
 
 Timed benchmark, JSON output:
 
 ```bash
-./target/release/shred-probe bench --duration 300 --output report.json
+shred-probe bench --duration 300 --output report.json
 ```
 
 ---
