@@ -5,27 +5,30 @@ Measures the latency advantage of raw Solana shred feeds over confirmed-block RP
 If your business depends on seeing transactions before your competitors, shredder gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
 
 ```
-==========================================================================================
-                SHREDDER FEED QUALITY DASHBOARD  2026-02-25 14:32:05
-==========================================================================================
+============================================================================================
+            SHREDDER FEED QUALITY  2026-02-25 22:02:48  (running 1m 23s)
+============================================================================================
 
-SOURCE                 SHREDS/s   COV%   WIN%  TXS/s  FEC-REC  LEAD µs (mean / min / max)
-------------------------------------------------------------------------------------------
-bebop                      4200    82%    61%    400        52  +321 / +180 / +640
-jito-shredstream           4100    78%    40%    380        38  +271 / +150 / +590
-rpc                           0     —      —     420         0  —
-------------------------------------------------------------------------------------------
+SOURCE               SHREDS/s   COV%   WIN%  TXS/s  FEC-REC  LEAD ms (avg / min / max)
+--------------------------------------------------------------------------------------------
+bebop                    4200    82%    61%    400       52   +0.32 / +0.18 / +0.64
+jito-shredstream         4100    78%    40%    380       38   +0.27 / +0.15 / +0.59
+rpc                         —     —      —     420        —     baseline
+--------------------------------------------------------------------------------------------
 
-EDGE:
-  ✓ bebop  AHEAD of RPC by avg 0.32ms  (n=12400)
-  ✓ jito-shredstream  AHEAD of RPC by avg 0.27ms  (n=9800)
+EDGE ASSESSMENT:
+  ✓  bebop               AHEAD of RPC  by 0.32ms avg  (12400 samples)
+  ✓  jito-shredstream    AHEAD of RPC  by 0.27ms avg  (9800 samples)
+
+--------------------------------------------------------------------------------------------
+COV% = block shreds received  WIN% = txs seen first  LEAD = ms before RPC confirmation
 ```
 
 ---
 
 ## How it works
 
-Solana leaders distribute blocks as shreds over UDP. Feed providers relay those shreds to your machine before the block is confirmed. 
+Solana leaders distribute blocks as shreds over UDP. Feed providers relay those shreds to your machine before the block is confirmed.
 
 shredder:
 
@@ -67,8 +70,6 @@ cargo install --path ~/shred-probe
 
 ---
 
-
-
 ## Quick start
 
 Detect active feeds and write `probe.toml`:
@@ -77,30 +78,22 @@ Detect active feeds and write `probe.toml`:
 shredder discover
 ```
 
-Install and start the background service (persists across sessions):
+Start background data collection (persists across reboots):
 
 ```bash
-shredder service install
 shredder service start
-shredder service enable
 ```
 
-Check current metrics (non-interactive, works from any terminal):
-
-```bash
-shredder status
-```
-
-Live dashboard (interactive, Ctrl-C to exit):
+Open the live dashboard (Ctrl-C closes the view, collection keeps running):
 
 ```bash
 shredder monitor
 ```
 
-Timed benchmark, JSON output:
+Check metrics without opening the dashboard:
 
 ```bash
-shredder bench --duration 300 --output report.json
+shredder status
 ```
 
 ---
@@ -146,13 +139,23 @@ Optional per-source fields:
 
 ## Commands
 
-### `shredder discover`
+### `shredder service start`
 
-Diagnostic snapshot before you start. Shows DoubleZero group availability, active multicast memberships on the machine, UDP sockets bound to multicast addresses, and configured sources from `probe.toml`.
+Installs the systemd unit file, enables it on boot, and starts the service. If the service is already running, shows current status instead. Run once after install.
+
+```bash
+shredder service start    # start (installs and enables automatically)
+shredder service stop     # stop
+shredder service restart  # restart
+shredder service status   # show systemd status
+shredder service uninstall  # remove unit file and disable
+```
 
 ### `shredder monitor [--interval N]`
 
-Live-updating dashboard. Refreshes every `N` seconds (default 5). Columns:
+Live dashboard reading from the service metrics log. Refreshes every `N` seconds (default 5). Ctrl-C closes the view — the background service keeps running.
+
+Requires `shredder service start` to be running first.
 
 | Column | Meaning |
 |--------|---------|
@@ -161,13 +164,19 @@ Live-updating dashboard. Refreshes every `N` seconds (default 5). Columns:
 | `WIN%` | Fraction of transactions this source decoded first |
 | `TXS/s` | Decoded transactions per second |
 | `FEC-REC` | Shreds reconstructed via Reed-Solomon in this window |
-| `LEAD µs` | Mean / min / max arrival advantage over RPC (µs) |
+| `LEAD ms` | Mean / min / max arrival advantage over RPC in milliseconds |
 
-Press Ctrl-C to stop.
+### `shredder status`
+
+One-shot snapshot from the metrics log. Non-interactive — works from any terminal or script.
+
+### `shredder discover`
+
+Diagnostic snapshot. Shows DoubleZero group availability, active multicast memberships, UDP sockets bound to multicast addresses, and configured sources from `probe.toml`. Run this before configuring sources.
 
 ### `shredder bench --duration N [--output FILE]`
 
-Runs for `N` seconds, then writes a JSON report. If `--output` is omitted, prints to stdout. Human-readable summary goes to stderr.
+Runs a timed benchmark for `N` seconds and writes a JSON report. If `--output` is omitted, prints to stdout.
 
 ```json
 {
@@ -177,7 +186,6 @@ Runs for `N` seconds, then writes a JSON report. If `--output` is omitted, print
       "name": "bebop",
       "shreds_received": 1260000,
       "shreds_per_sec": 4200.0,
-      "bytes_received_mb": 1488.4,
       "coverage_pct": 82.3,
       "fec_recovered_shreds": 15600,
       "txs_decoded": 126000,
@@ -195,6 +203,15 @@ Runs for `N` seconds, then writes a JSON report. If `--output` is omitted, print
 ### `shredder init`
 
 Prints a default `probe.toml` to stdout.
+
+### `shredder upgrade`
+
+Downloads and installs the latest release binary.
+
+```bash
+shredder upgrade           # download latest release
+shredder upgrade --source  # pull main and rebuild from source
+```
 
 ---
 
@@ -214,30 +231,24 @@ Prints a default `probe.toml` to stdout.
 
 | Code | Multicast IP | Description |
 |------|-------------|-------------|
-| `bebop` | `111.11.111.1` | Malbec Labs relay |
-| `jito-shredstream` | `111.11.111.2` | Jito relay |
+| `bebop` | `233.84.178.1` | Malbec Labs relay |
+| `jito-shredstream` | `233.84.178.2` | Jito relay |
 
 To subscribe to a multicast group over DoubleZero refer to the [DoubleZero documentation](https://docs.malbeclabs.com/Multicast%20Connection/).
-
----
-## Upgrade
-
-```bash
-shredder upgrade
-```
 
 ---
 
 ## Uninstall
 
-If installed via `curl`:
+Stop and remove the service:
 ```bash
-rm /usr/local/bin/shredder
+shredder service uninstall
 ```
 
-If installed via `cargo install`:
+Remove the binary:
 ```bash
-cargo uninstall shredder
+rm /usr/local/bin/shredder        # if installed via curl
+cargo uninstall shredder          # if installed via cargo
 ```
 
 Remove config and source:
@@ -246,6 +257,7 @@ rm -rf ~/shred-probe probe.toml
 ```
 
 ---
+
 ## License
 
 MIT
