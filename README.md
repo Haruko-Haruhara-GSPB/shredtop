@@ -2,7 +2,7 @@
 
 Measures the latency advantage of raw Solana shred feeds over confirmed-block RPC.
 
-If you run a MEV bot, liquidator, or arbitrage strategy, your edge depends on seeing transactions before your competitors. DoubleZero and Jito ShredStream relay raw shreds _before_ the block is confirmed — shred-probe tells you exactly how many milliseconds ahead you are, and whether that edge is holding.
+If your buseiness depends on seeing transactions before your competitors. Shred-probe gives you an estimations of how many milliseconds ahead you are, and whether that edge is holding.
 
 ```
 ==========================================================================================
@@ -25,7 +25,9 @@ EDGE:
 
 ## How it works
 
-Solana leaders distribute blocks as shreds over UDP. Feed providers relay those shreds via multicast before the block is confirmed. shred-probe:
+Solana leaders distribute blocks as shreds over UDP. Feed providers relay those shreds to your machine before the block is confirmed. 
+
+shred-probe:
 
 1. Binds a UDP socket on your multicast interface and receives raw shreds
 2. Parses the Agave wire format, runs Reed-Solomon FEC recovery on partial FEC sets
@@ -42,7 +44,7 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 ## Requirements
 
 - Linux x86_64
-- A DoubleZero subscription with a multicast interface (e.g. `doublezero1`), or a Jito ShredStream subscription
+- A shred feed
 - A local Solana RPC node (for the baseline comparison)
 - Rust 1.81+
 
