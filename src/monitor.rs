@@ -59,6 +59,11 @@ pub fn run(config: &ProbeConfig, interval_secs: u64) -> Result<()> {
         all_metrics.iter().map(|m| m.snapshot()).collect();
     let mut prev_time = Instant::now();
 
+    // Draw immediately so the screen isn't blank for the first interval
+    print!("\x1b[H\x1b[2J");
+    print_dashboard(&prev_snapshots, &prev_snapshots, interval_secs as f64);
+    std::io::stdout().flush().ok();
+
     while RUNNING.load(Ordering::SeqCst) {
         std::thread::sleep(interval);
 
