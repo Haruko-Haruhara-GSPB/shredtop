@@ -6,9 +6,11 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
+use std::net::TcpStream;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use crate::config::{ProbeConfig, SourceEntry};
 
@@ -51,6 +53,8 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         if input.trim().eq_ignore_ascii_case("y") {
+            let rpc_url = detect_rpc_url();
+            println!("RPC: {}", rpc_url);
             let mut sources = detected;
             sources.push(SourceEntry {
                 name: "rpc".into(),
@@ -58,7 +62,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
                 multicast_addr: None,
                 port: None,
                 interface: None,
-                url: Some("http://127.0.0.1:8899".into()),
+                url: Some(rpc_url),
                 pin_recv_core: None,
                 pin_decode_core: None,
             });
@@ -66,9 +70,6 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             let toml_str = toml::to_string_pretty(&cfg)?;
             std::fs::write(config_path, toml_str)?;
             println!("Written to {}.", config_path.display());
-            println!(
-                "Edit the rpc url if your local node is not at http://127.0.0.1:8899"
-            );
         }
     } else {
         println!();
@@ -229,6 +230,40 @@ fn show_configured_sources(config: &ProbeConfig) {
             }
         }
     }
+}
+
+/// Probe candidate localhost RPC ports and return the URL of the first one
+/// that responds to a Solana `getHealth` JSON-RPC call.
+fn detect_rpc_url() -> String {
+    const CANDIDATES: &[u16] = &[8899, 58000, 8900, 9000, 8080];
+    const BODY: &str = r#"{"jsonrpc":"2.0","id":1,"method":"getHealth"}"#;
+
+    for &port in CANDIDATES {
+        let addr = format!("127.0.0.1:{}", port);
+        let Ok(mut stream) =
+            TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300))
+        else {
+            continue;
+        };
+        let req = format!(
+            "POST / HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            port,
+            BODY.len(),
+            BODY
+        );
+        if stream.write_all(req.as_bytes()).is_err() {
+            continue;
+        }
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+        let mut response = String::new();
+        let _ = stream.read_to_string(&mut response);
+        if response.contains("\"result\"") {
+            return format!("http://127.0.0.1:{}", port);
+        }
+    }
+
+    // No local RPC found — return default and let the user correct it
+    "http://127.0.0.1:8899".to_string()
 }
 
 /// Print UDP sockets bound to multicast addresses from `ss -ulnp`.
