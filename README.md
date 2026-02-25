@@ -205,8 +205,8 @@ Prints a default `probe.toml` to stdout.
 
 | Code | Multicast IP | Description |
 |------|-------------|-------------|
-| `bebop` | `233.84.178.1` | Malbec Labs relay |
-| `jito-shredstream` | `233.84.178.2` | Jito relay |
+| `bebop` | `111.11.111.1` | Malbec Labs relay |
+| `jito-shredstream` | `111.11.111.2` | Jito relay |
 
 To subscribe to a multicast group over DoubleZero refer to the [DoubleZero documentation](https://docs.malbeclabs.com/Multicast%20Connection/).
 
