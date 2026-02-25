@@ -53,12 +53,15 @@ impl ShredReceiver {
             }
         }
 
-        let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port);
-        socket.bind(&bind_addr.into())?;
-
-        // Join multicast group on the specified interface
+        // Parse multicast address first so we can bind to it directly.
+        // Binding to the multicast address (not UNSPECIFIED) ensures this socket
+        // only receives packets destined for this specific group, preventing
+        // cross-contamination when multiple sources share the same port.
         let mcast_addr: Ipv4Addr = multicast_addr.parse()?;
         let iface_addr = Self::resolve_interface_addr(interface)?;
+        let bind_addr = SocketAddrV4::new(mcast_addr, port);
+        socket.bind(&bind_addr.into())?;
+
         socket.join_multicast_v4(&mcast_addr, &iface_addr)?;
 
         // Enable busy-poll for lower latency

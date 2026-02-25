@@ -445,7 +445,15 @@ impl ShredDecoder {
                 let slot_fec = fec_sets.entry(slot).or_default();
                 let fec = slot_fec
                     .entry(fec_set_index)
-                    .or_insert_with(|| FecSet::new(num_data, num_coding));
+                    .or_insert_with(|| {
+                        // Count expected data shreds per FEC set as we discover them.
+                        // This is the correct denominator for coverage on tail-only feeds
+                        // where the last-in-slot marker rarely arrives.
+                        self.metrics
+                            .coverage_shreds_expected
+                            .fetch_add(num_data as u64, Relaxed);
+                        FecSet::new(num_data, num_coding)
+                    });
 
                 if fec.num_data != num_data || fec.num_coding != num_coding {
                     continue;
@@ -480,12 +488,8 @@ impl ShredDecoder {
                                 if global_idx > slot_state.max_index {
                                     slot_state.max_index = global_idx;
                                 }
-                                if last_in_slot && !slot_state.last_seen {
+                                if last_in_slot {
                                     slot_state.last_seen = true;
-                                    self.metrics.coverage_shreds_expected.fetch_add(
-                                        slot_state.max_index as u64 + 1,
-                                        Relaxed,
-                                    );
                                 }
                                 slot_state.data_payloads.insert(global_idx, payload);
                                 recovered_count += 1;
@@ -570,12 +574,8 @@ impl ShredDecoder {
             if shred_index > state.max_index {
                 state.max_index = shred_index;
             }
-            if last_in_slot && !state.last_seen {
+            if last_in_slot {
                 state.last_seen = true;
-                self.metrics.coverage_shreds_expected.fetch_add(
-                    state.max_index as u64 + 1,
-                    Relaxed,
-                );
             }
 
             state.data_payloads.insert(shred_index, payload);
