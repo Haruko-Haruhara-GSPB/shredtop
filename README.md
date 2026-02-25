@@ -53,41 +53,36 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 ## Install
 
 ```bash
-git clone git@github.com:Haruko-Haruhara-GSPB/shred-probe.git
-cd shred-probe
-cargo build --release
+git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git
 ```
 
-Static musl binary (no runtime dependencies):
+```bash
+cd shred-probe
+```
 
 ```bash
-rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release
 ```
 
 ---
 
 ## Quick start
 
-**Step 1 — generate a config:**
+**Step 1 — edit `probe.toml`** to set your interface name and RPC URL.
 
-```bash
-./target/release/shred-probe init > probe.toml
-```
-
-**Step 2 — edit `probe.toml`** to set your interface name and RPC URL, then check what's reachable:
+On first run, the binary creates `probe.toml` automatically. Check what's reachable:
 
 ```bash
 ./target/release/shred-probe discover
 ```
 
-**Step 3 — live dashboard** (Ctrl-C to stop):
+**Step 2 — live dashboard** (Ctrl-C to stop):
 
 ```bash
 ./target/release/shred-probe monitor
 ```
 
-**Step 4 — 5-minute benchmark, JSON output:**
+**Step 3 — 5-minute benchmark, JSON output:**
 
 ```bash
 ./target/release/shred-probe bench --duration 300 --output report.json

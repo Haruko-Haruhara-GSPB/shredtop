@@ -11,11 +11,10 @@ Standalone Solana shred feed latency benchmark. Measures the millisecond advanta
 ## Critical rules
 
 ### Git identity
-**All commits must be authored as `Haruko-Haruhara-GSPB / jwarn2011@gmail.com`.**
-Always verify before committing:
+Always verify git identity before committing:
 ```bash
-git config user.name   # must be Haruko-Haruhara-GSPB
-git config user.email  # must be jwarn2011@gmail.com
+git config user.name
+git config user.email
 ```
 
 ### Commit style

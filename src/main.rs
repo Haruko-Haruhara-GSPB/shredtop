@@ -27,12 +27,13 @@ fn main() -> Result<()> {
         Commands::Init => None,
         _ => {
             if !cli.config.exists() {
+                let example = config::ProbeConfig::default_example();
+                let toml = toml::to_string_pretty(&example)?;
+                std::fs::write(&cli.config, &toml)?;
                 eprintln!(
-                    "Config file '{}' not found.",
+                    "Created '{}' with default sources — edit it to set your interface and RPC URL.",
                     cli.config.display()
                 );
-                eprintln!("Run `shred-probe init > probe.toml` to create a default config.");
-                std::process::exit(1);
             }
             Some(config::ProbeConfig::load(&cli.config)?)
         }
