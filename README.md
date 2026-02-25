@@ -53,9 +53,7 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 ## Install
 
 ```bash
-git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git ~/shred-probe 2>/dev/null || git -C ~/shred-probe fetch --tags origin
-git -C ~/shred-probe checkout -q $(git -C ~/shred-probe describe --tags --abbrev=0)
-cargo install --path ~/shred-probe
+curl -fsSL https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/latest/download/shredder -o /usr/local/bin/shredder && chmod +x /usr/local/bin/shredder
 ```
 
 ---
@@ -71,11 +69,7 @@ shredder upgrade
 ## Uninstall
 
 ```bash
-cargo uninstall shredder
-```
-
-```bash
-rm -rf probe.toml shred-probe/
+rm /usr/local/bin/shredder probe.toml
 ```
 
 ---

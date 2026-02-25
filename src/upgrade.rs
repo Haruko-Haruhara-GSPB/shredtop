@@ -1,19 +1,13 @@
-//! `shredder upgrade` — check for updates and reinstall.
-//!
-//! Fast path: if run from inside the cloned repo directory, uses
-//! `git pull` + `cargo build --release` + binary copy. This reuses the
-//! incremental build cache so only changed crates are recompiled.
-//!
-//! Slow path: if run from outside the repo, falls back to
-//! `cargo install --git` which always does a full recompile.
+//! `shredder upgrade` — download the latest release binary from GitHub.
 
 use anyhow::Result;
 use std::io::{self, Write};
-use std::path::Path;
 use std::process::Command;
 
-const REPO_URL: &str = "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git";
-const RELEASES_API: &str = "https://api.github.com/repos/Haruko-Haruhara-GSPB/shred-probe/releases/latest";
+const RELEASES_API: &str =
+    "https://api.github.com/repos/Haruko-Haruhara-GSPB/shred-probe/releases/latest";
+const DOWNLOAD_URL: &str =
+    "https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/download/{tag}/shredder";
 
 pub fn run() -> Result<()> {
     let current = env!("CARGO_PKG_VERSION");
@@ -24,91 +18,42 @@ pub fn run() -> Result<()> {
     let latest = fetch_latest_release();
     match &latest {
         Some(tag) => println!("{}", tag),
-        None => println!("(could not reach GitHub)"),
-    }
-
-    if let Some(ref tag) = latest {
-        if tag == &format!("v{}", current) {
-            println!("Already up to date.");
+        None => {
+            println!("(could not reach GitHub)");
             return Ok(());
         }
-        println!("Upgrading to {}...", tag);
-    } else {
-        println!("Installing latest...");
     }
 
-    println!();
-
-    if is_repo_root() {
-        fast_upgrade(&latest)
-    } else {
-        println!("Tip: run `shredder upgrade` from inside the cloned repo for faster upgrades.");
-        println!("     cd shred-probe && shredder upgrade");
-        println!();
-        slow_upgrade(&latest)
+    let tag = latest.unwrap();
+    if tag == format!("v{}", current) {
+        println!("Already up to date.");
+        return Ok(());
     }
-}
 
-/// Fast path — git fetch + checkout tag + incremental build + copy binary.
-fn fast_upgrade(latest: &Option<String>) -> Result<()> {
-    println!("Repo detected — using incremental build (fast).");
-    println!();
+    println!("Upgrading to {}...", tag);
 
-    // Fetch latest tags. Works regardless of whether the repo is on a branch
-    // or in detached HEAD state (which is normal after `git checkout <tag>`).
-    let ok = Command::new("git")
-        .args(["fetch", "--tags", "origin"])
-        .status()?
-        .success();
-    anyhow::ensure!(ok, "git fetch failed");
-
-    // Check out the target tag if known, otherwise fall back to origin/main.
-    let target = latest
-        .as_deref()
-        .unwrap_or("origin/main");
-    let ok = Command::new("git")
-        .args(["checkout", "-q", target])
-        .status()?
-        .success();
-    anyhow::ensure!(ok, "git checkout failed");
-
-    let ok = Command::new("cargo")
-        .args(["build", "--release", "--quiet"])
-        .status()?
-        .success();
-    anyhow::ensure!(ok, "cargo build failed");
-
-    // Copy the freshly built binary over the installed one.
-    let built = Path::new("target/release/shredder");
-    anyhow::ensure!(built.exists(), "build succeeded but binary not found");
-
+    let url = DOWNLOAD_URL.replace("{tag}", &tag);
     let dest = which_shredder()?;
-    std::fs::copy(built, &dest)?;
-    println!("Installed to {}.", dest.display());
 
-    Ok(())
-}
+    let ok = Command::new("curl")
+        .args(["-fsSL", "--max-time", "120", "-o"])
+        .arg(&dest)
+        .arg(&url)
+        .status()?
+        .success();
+    anyhow::ensure!(ok, "download failed — check your internet connection");
 
-/// Slow path — cargo install --git (full recompile, no local clone needed).
-fn slow_upgrade(latest: &Option<String>) -> Result<()> {
-    let tag_owned;
-    let mut args = vec!["install", "--git", REPO_URL, "--force", "--quiet"];
-    if let Some(ref tag) = latest {
-        tag_owned = tag.clone();
-        args.push("--tag");
-        args.push(&tag_owned);
+    // Ensure the binary is executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&dest)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&dest, perms)?;
     }
 
-    let ok = Command::new("cargo").args(&args).status()?.success();
-    anyhow::ensure!(ok, "upgrade failed");
-
+    println!("Done. {} installed to {}.", tag, dest.display());
     Ok(())
-}
-
-/// Returns true if the current directory looks like the shredder repo root.
-fn is_repo_root() -> bool {
-    Path::new("Cargo.toml").exists()
-        && Path::new("crates/shred-ingest").exists()
 }
 
 /// Locate the installed shredder binary via `which`.
@@ -120,7 +65,6 @@ fn which_shredder() -> Result<std::path::PathBuf> {
 }
 
 /// Query the GitHub releases API and return the tag name of the latest release.
-/// Uses `curl` to avoid pulling in a TLS dependency.
 fn fetch_latest_release() -> Option<String> {
     let output = Command::new("curl")
         .args(["-sf", "--max-time", "10", "-H", "User-Agent: shredder", RELEASES_API])
