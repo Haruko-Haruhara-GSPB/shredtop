@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     // Load config (except for commands that don't need it)
     let config = match &cli.command {
-        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } => None,
+        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } | Commands::Monitor { .. } => None,
         _ => {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
             discover::run(config.as_ref().unwrap(), &cli.config)?;
         }
         Commands::Monitor { interval } => {
-            monitor::run(config.as_ref().unwrap(), interval)?;
+            monitor::run(interval)?;
         }
         Commands::Bench { duration, output } => {
             bench::run(config.as_ref().unwrap(), duration, output)?;
