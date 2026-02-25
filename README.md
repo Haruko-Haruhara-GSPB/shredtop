@@ -77,7 +77,21 @@ Detect active feeds and write `probe.toml`:
 shredder discover
 ```
 
-Live dashboard:
+Install and start the background service (persists across sessions):
+
+```bash
+shredder service install
+shredder service start
+shredder service enable
+```
+
+Check current metrics (non-interactive, works from any terminal):
+
+```bash
+shredder status
+```
+
+Live dashboard (interactive, Ctrl-C to exit):
 
 ```bash
 shredder monitor

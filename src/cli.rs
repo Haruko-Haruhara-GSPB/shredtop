@@ -47,4 +47,44 @@ pub enum Commands {
 
     /// Upgrade shredder to the latest version from GitHub
     Upgrade,
+
+    /// Run background data collection, writing metrics to a log file
+    Run {
+        /// Snapshot interval in seconds
+        #[clap(long, default_value = "5")]
+        interval: u64,
+
+        /// Path to write metrics log (JSONL)
+        #[clap(long, default_value = crate::run::DEFAULT_LOG)]
+        log: std::path::PathBuf,
+    },
+
+    /// Show the latest metrics snapshot from the log (non-interactive)
+    Status,
+
+    /// Manage the shredder systemd service
+    Service {
+        #[clap(subcommand)]
+        action: ServiceAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ServiceAction {
+    /// Install the systemd unit file
+    Install,
+    /// Remove the systemd unit file
+    Uninstall,
+    /// Start the service
+    Start,
+    /// Stop the service
+    Stop,
+    /// Restart the service
+    Restart,
+    /// Show service status
+    Status,
+    /// Enable the service to start on boot
+    Enable,
+    /// Disable the service from starting on boot
+    Disable,
 }

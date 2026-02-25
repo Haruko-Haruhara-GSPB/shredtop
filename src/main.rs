@@ -12,9 +12,12 @@ mod cli;
 mod config;
 mod discover;
 mod monitor;
+mod run;
+mod service;
+mod status;
 mod upgrade;
 
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, ServiceAction};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -25,7 +28,7 @@ fn main() -> Result<()> {
 
     // Load config (except for commands that don't need it)
     let config = match &cli.command {
-        Commands::Init | Commands::Upgrade => None,
+        Commands::Init | Commands::Upgrade | Commands::Status | Commands::Service { .. } => None,
         _ => {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
@@ -55,6 +58,22 @@ fn main() -> Result<()> {
         Commands::Bench { duration, output } => {
             bench::run(config.as_ref().unwrap(), duration, output)?;
         }
+        Commands::Run { interval, log } => {
+            run::run(config.as_ref().unwrap(), interval, log)?;
+        }
+        Commands::Status => {
+            status::run()?;
+        }
+        Commands::Service { action } => match action {
+            ServiceAction::Install => service::install(&cli.config)?,
+            ServiceAction::Uninstall => service::uninstall()?,
+            ServiceAction::Start => service::control("start")?,
+            ServiceAction::Stop => service::control("stop")?,
+            ServiceAction::Restart => service::control("restart")?,
+            ServiceAction::Status => service::control("status")?,
+            ServiceAction::Enable => service::control("enable")?,
+            ServiceAction::Disable => service::control("disable")?,
+        },
     }
 
     Ok(())
