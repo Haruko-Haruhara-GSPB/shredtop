@@ -1,0 +1,19 @@
+[package]
+name = "shred-ingest"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+solana-transaction = { workspace = true }
+solana-commitment-config = { workspace = true }
+solana-entry = { workspace = true }
+solana-client = { workspace = true }
+solana-transaction-status = { workspace = true }
+crossbeam-channel = { workspace = true }
+socket2 = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+libc = { workspace = true }
+bincode = { workspace = true }
+dashmap = { workspace = true }
+reed-solomon-erasure = { workspace = true }
