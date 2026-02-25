@@ -40,7 +40,7 @@ pub fn run() -> Result<()> {
     println!();
 
     if is_repo_root() {
-        fast_upgrade()
+        fast_upgrade(&latest)
     } else {
         println!("Tip: run `shredder upgrade` from inside the cloned repo for faster upgrades.");
         println!("     cd shred-probe && shredder upgrade");
@@ -49,13 +49,28 @@ pub fn run() -> Result<()> {
     }
 }
 
-/// Fast path — git pull + incremental build + copy binary.
-fn fast_upgrade() -> Result<()> {
+/// Fast path — git fetch + checkout tag + incremental build + copy binary.
+fn fast_upgrade(latest: &Option<String>) -> Result<()> {
     println!("Repo detected — using incremental build (fast).");
     println!();
 
-    let ok = Command::new("git").args(["pull"]).status()?.success();
-    anyhow::ensure!(ok, "git pull failed");
+    // Fetch latest tags. Works regardless of whether the repo is on a branch
+    // or in detached HEAD state (which is normal after `git checkout <tag>`).
+    let ok = Command::new("git")
+        .args(["fetch", "--tags", "origin"])
+        .status()?
+        .success();
+    anyhow::ensure!(ok, "git fetch failed");
+
+    // Check out the target tag if known, otherwise fall back to origin/main.
+    let target = latest
+        .as_deref()
+        .unwrap_or("origin/main");
+    let ok = Command::new("git")
+        .args(["checkout", "-q", target])
+        .status()?
+        .success();
+    anyhow::ensure!(ok, "git checkout failed");
 
     let ok = Command::new("cargo")
         .args(["build", "--release", "--quiet"])
