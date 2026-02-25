@@ -72,28 +72,21 @@ cargo install --path ~/shred-probe
 
 ## Quick start
 
-Detect active feeds and write `probe.toml`:
-
 ```bash
+# 1. Detect active feeds and write probe.toml
 shredder discover
-```
 
-Start background data collection (persists across reboots):
-
-```bash
+# 2. Start background collection (installs systemd service, persists across reboots)
 shredder service start
-```
 
-Open the live dashboard (Ctrl-C closes the view, collection keeps running):
-
-```bash
+# 3. Open the live dashboard — Ctrl-C closes the view, collection keeps running
 shredder monitor
-```
 
-Check metrics without opening the dashboard:
-
-```bash
+# Check metrics any time without opening the dashboard
 shredder status
+
+# Upgrade to the latest version
+shredder upgrade --source
 ```
 
 ---
