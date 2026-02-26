@@ -27,7 +27,7 @@ pub struct SourceEntry {
     pub source_type: String,
     /// Multicast group IP (shred only)
     pub multicast_addr: Option<String>,
-    /// UDP port (shred only, default 20001)
+    /// UDP port (shred only; bebop=7733, jito-shredstream=20001)
     pub port: Option<u16>,
     /// Network interface for multicast (shred only, e.g. "doublezero1")
     pub interface: Option<String>,
@@ -59,7 +59,7 @@ impl ProbeConfig {
                     name: "bebop".into(),
                     source_type: "shred".into(),
                     multicast_addr: Some("233.84.178.1".into()),
-                    port: Some(20001),
+                    port: Some(7733),
                     interface: Some("doublezero1".into()),
                     url: None,
                     x_token: None,

@@ -100,7 +100,7 @@ shredder upgrade --source
 name = "bebop"
 type = "shred"
 multicast_addr = "233.84.178.1"
-port = 20001
+port = 7733
 interface = "doublezero1"
 
 # Jito ShredStream feed
@@ -144,7 +144,7 @@ Optional per-source fields:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `port` | `20001` | UDP multicast port (`shred` only) |
+| `port` | — | UDP multicast port (`shred` only). bebop=`7733`, jito-shredstream=`20001` — always set explicitly |
 | `interface` | `doublezero1` | Network interface for multicast (`shred` only) |
 | `x_token` | — | Auth token sent as `x-token` gRPC header (`geyser` only) |
 | `pin_recv_core` | — | CPU core to pin the receiver thread |
@@ -204,7 +204,9 @@ One-shot snapshot from the metrics log. Non-interactive — works from any termi
 
 ### `shredder discover`
 
-Diagnostic snapshot. Shows DoubleZero group availability, active multicast memberships, UDP sockets bound to multicast addresses, and configured sources from `probe.toml`. Run this before configuring sources.
+Auto-detects DoubleZero multicast feeds and local RPC nodes. Shows group availability, active multicast memberships, and configured sources from `probe.toml`. Sniffs live traffic to identify the correct UDP port for each feed automatically. Offers to write detected sources to `probe.toml`.
+
+Internet-based sources (Helius, Triton, QuickNode Geyser, Jito gRPC proxy) cannot be auto-detected and must be configured manually in `probe.toml` — see the source type table above.
 
 ### `shredder bench --duration N [--output FILE]`
 
@@ -282,10 +284,10 @@ shredder upgrade --source  # pull main and rebuild from source
 
 ## DoubleZero multicast groups
 
-| Code | Multicast IP | Description |
-|------|-------------|-------------|
-| `bebop` | `233.84.178.1` | Malbec Labs relay |
-| `jito-shredstream` | `233.84.178.2` | Jito relay |
+| Code | Multicast IP | Port | Description |
+|------|-------------|------|-------------|
+| `bebop` | `233.84.178.1` | `7733` | Malbec Labs relay |
+| `jito-shredstream` | `233.84.178.2` | `20001` | Jito relay |
 
 To subscribe to a multicast group over DoubleZero refer to the [DoubleZero documentation](https://docs.malbeclabs.com/Multicast%20Connection/).
 
