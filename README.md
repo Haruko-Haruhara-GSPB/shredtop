@@ -34,7 +34,7 @@ shredder:
 1. Binds a UDP socket on your multicast interface and receives raw shreds
 2. Parses the Agave wire format, runs Reed-Solomon FEC recovery on partial FEC sets
 3. Deserializes `Entry` structs via bincode to extract transactions
-4. Polls your local RPC node for confirmed blocks in parallel
+4. Polls a baseline source (RPC, Yellowstone Geyser, or Jito gRPC proxy) for confirmed transactions in parallel
 5. Matches transactions across sources by `signatures[0]`, computes arrival time deltas
 
 Lead time = `T_rpc_confirmed − T_shred_received`. Positive means you were ahead.
@@ -46,8 +46,8 @@ All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 ## Requirements
 
 - Linux x86_64
-- A shred feed
-- A local Solana RPC node (for the baseline comparison)
+- A shred feed (DoubleZero, Jito ShredStream UDP, or Jito gRPC proxy)
+- A baseline source: local Solana RPC node, Yellowstone Geyser endpoint, or Jito ShredStream gRPC proxy
 - Rust 1.81+ _(build from source only)_
 
 ---
@@ -218,6 +218,12 @@ Runs a timed benchmark for `N` seconds and writes a JSON report. If `--output` i
       "name": "bebop",
       "shreds_received": 1260000,
       "shreds_per_sec": 4200.0,
+      "bytes_received_mb": 1764.0,
+      "shreds_dropped": 120,
+      "slots_attempted": 1250,
+      "slots_complete": 980,
+      "slots_partial": 245,
+      "slots_dropped": 25,
       "coverage_pct": 82.3,
       "fec_recovered_shreds": 15600,
       "txs_decoded": 126000,
