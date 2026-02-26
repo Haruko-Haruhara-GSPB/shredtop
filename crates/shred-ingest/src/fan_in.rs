@@ -11,6 +11,8 @@
 
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
+use solana_pubkey::Pubkey;
+use std::collections::HashSet;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -172,11 +174,15 @@ struct FirstArrival {
 /// The returned `Vec<Arc<SourceMetrics>>` has one entry per source in insertion order.
 pub struct FanInSource {
     sources: Vec<(Box<dyn TxSource>, Arc<SourceMetrics>)>,
+    /// Optional program/account filter. When non-empty, only transactions whose static
+    /// account keys include at least one of these pubkeys are counted for lead-time.
+    /// Applies to shred-tier sources only; RPC-tier sources (is_rpc=true) are exempt.
+    pub filter_programs: Vec<String>,
 }
 
 impl FanInSource {
     pub fn new() -> Self {
-        Self { sources: Vec::new() }
+        Self { sources: Vec::new(), filter_programs: Vec::new() }
     }
 
     pub fn add_source(&mut self, source: Box<dyn TxSource>, metrics: Arc<SourceMetrics>) {
@@ -192,6 +198,14 @@ impl FanInSource {
         let mut all_handles: Vec<JoinHandle<()>> = Vec::new();
         let mut all_metrics: Vec<Arc<SourceMetrics>> = Vec::new();
 
+        // Parse filter programs once at start time; shared across relay threads.
+        let filter_set: Arc<HashSet<Pubkey>> = Arc::new(
+            self.filter_programs
+                .iter()
+                .filter_map(|s| s.parse::<Pubkey>().ok())
+                .collect(),
+        );
+
         for (source, source_metrics) in self.sources {
             let source_name = source.name();
             let source_is_rpc = source.is_rpc();
@@ -203,11 +217,21 @@ impl FanInSource {
 
             let dedup_clone = dedup.clone();
             let out_tx_clone = out_tx.clone();
+            let filter_clone = filter_set.clone();
 
             let relay_handle = std::thread::Builder::new()
                 .name(format!("fan-in-{}", source_name))
                 .spawn(move || {
                     for decoded in &inner_rx {
+                        // Apply program/account filter for shred-tier sources.
+                        // RPC-tier sources are exempt so they always provide timestamps.
+                        if !filter_clone.is_empty() && !source_is_rpc {
+                            let keys = decoded.transaction.message.static_account_keys();
+                            if !keys.iter().any(|k| filter_clone.contains(k)) {
+                                continue;
+                            }
+                        }
+
                         let sig_bytes: [u8; 64] = match decoded.transaction.signatures.first() {
                             Some(sig) => match sig.as_ref().try_into() {
                                 Ok(b) => b,
@@ -322,7 +346,7 @@ mod tests {
     #[test]
     fn test_first_arrival_wins() {
         let dedup: DashMap<[u8; 64], FirstArrival> = DashMap::new();
-        let metrics = SourceMetrics::new("test");
+        let metrics = SourceMetrics::new("test", false);
         let sig: [u8; 64] = [0xAB; 64];
 
         match dedup.entry(sig) {
@@ -369,7 +393,7 @@ mod tests {
         assert!(lead_us > 0);
         assert_eq!(lead_us, 100);
 
-        let shred_metrics = SourceMetrics::new("shred");
+        let shred_metrics = SourceMetrics::new("shred", false);
         shred_metrics.record_lead_time_us(lead_us);
         assert_eq!(shred_metrics.lead_time_count.load(Relaxed), 1);
         assert_eq!(shred_metrics.lead_time_sum_us.load(Relaxed), 100);
@@ -384,7 +408,7 @@ mod tests {
         assert!(lead_us < 0);
         assert_eq!(lead_us, -100);
 
-        let shred_metrics = SourceMetrics::new("shred");
+        let shred_metrics = SourceMetrics::new("shred", false);
         shred_metrics.record_lead_time_us(lead_us);
         assert_eq!(shred_metrics.lead_time_count.load(Relaxed), 1);
         assert_eq!(shred_metrics.lead_time_sum_us.load(Relaxed), -100);

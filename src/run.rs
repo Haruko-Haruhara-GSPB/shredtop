@@ -27,13 +27,16 @@ struct LogEntry<'a> {
 #[derive(Serialize)]
 struct SourceSnap<'a> {
     name: &'a str,
+    /// True for RPC-tier sources (rpc, geyser); false for shred-tier feeds.
+    is_rpc: bool,
     shreds_per_sec: f64,
     coverage_pct: Option<f64>,
     /// % of matched transactions where this feed beat RPC (lead_time > 0)
     beat_rpc_pct: Option<f64>,
     lead_time_mean_us: Option<f64>,
-    lead_time_min_us: Option<i64>,
-    lead_time_max_us: Option<i64>,
+    lead_time_p50_us: Option<i64>,
+    lead_time_p95_us: Option<i64>,
+    lead_time_p99_us: Option<i64>,
     lead_time_samples: u64,
     txs_per_sec: f64,
 }
@@ -52,6 +55,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
     eprintln!("Run `shredder status` to check current metrics.");
 
     let mut fan_in = FanInSource::new();
+    fan_in.filter_programs = config.filter_programs.clone();
     for entry in &config.sources {
         let (source, metrics) = build_source(entry)?;
         fan_in.add_source(source, metrics);
@@ -120,31 +124,22 @@ fn make_snap<'a>(
         None
     };
 
-    let (lead_mean, lead_min, lead_max) = if c.lead_time_count > 0 {
-        let mean = c.lead_time_sum_us as f64 / c.lead_time_count as f64;
-        let min = if c.lead_time_min_us == i64::MAX {
-            None
-        } else {
-            Some(c.lead_time_min_us)
-        };
-        let max = if c.lead_time_max_us == i64::MIN {
-            None
-        } else {
-            Some(c.lead_time_max_us)
-        };
-        (Some(mean), min, max)
+    let lead_mean = if c.lead_time_count > 0 {
+        Some(c.lead_time_sum_us as f64 / c.lead_time_count as f64)
     } else {
-        (None, None, None)
+        None
     };
 
     SourceSnap {
         name: c.name,
+        is_rpc: c.is_rpc,
         shreds_per_sec: shreds_delta as f64 / elapsed,
         coverage_pct,
         beat_rpc_pct,
         lead_time_mean_us: lead_mean,
-        lead_time_min_us: lead_min,
-        lead_time_max_us: lead_max,
+        lead_time_p50_us: c.lead_time_p50_us,
+        lead_time_p95_us: c.lead_time_p95_us,
+        lead_time_p99_us: c.lead_time_p99_us,
         lead_time_samples: c.lead_time_count,
         txs_per_sec: txs_delta as f64 / elapsed,
     }

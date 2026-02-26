@@ -1,10 +1,99 @@
+use serde::Serialize;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::Relaxed};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+// ---------------------------------------------------------------------------
+// Per-slot stats emitted by the decoder when a slot is finalised
+// ---------------------------------------------------------------------------
+
+/// Maximum number of per-slot records kept in the rolling log.
+/// At ~400ms per slot this covers roughly 3 minutes of history.
+const SLOT_LOG_CAP: usize = 500;
+
+/// Outcome of a single slot's decode attempt.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SlotOutcome {
+    /// All data shreds arrived and the slot was fully decoded.
+    Complete,
+    /// Some shreds arrived and were decoded; coverage was incomplete.
+    Partial,
+    /// The slot expired with no decoded transactions.
+    Dropped,
+}
+
+/// Per-slot decode statistics collected by [`ShredDecoder`].
+#[derive(Debug, Clone, Serialize)]
+pub struct SlotStats {
+    pub slot: u64,
+    /// Number of unique data shreds received (includes FEC-recovered shreds).
+    pub shreds_seen: u32,
+    /// Number of data shreds reconstructed via Reed-Solomon FEC recovery.
+    pub fec_recovered: u32,
+    /// Transactions decoded from this slot.
+    pub txs_decoded: u32,
+    pub outcome: SlotOutcome,
+}
+
+// ---------------------------------------------------------------------------
+// Lead-time reservoir — circular buffer, sorted at snapshot time
+// ---------------------------------------------------------------------------
+
+const RESERVOIR_CAP: usize = 4096;
+
+struct LeadTimeReservoir {
+    buf: [i64; RESERVOIR_CAP],
+    /// Number of valid entries: 0..=RESERVOIR_CAP
+    len: usize,
+    /// Next write index (wraps around once full)
+    pos: usize,
+}
+
+impl LeadTimeReservoir {
+    fn new() -> Self {
+        Self {
+            buf: [0; RESERVOIR_CAP],
+            len: 0,
+            pos: 0,
+        }
+    }
+
+    fn push(&mut self, v: i64) {
+        self.buf[self.pos] = v;
+        self.pos = (self.pos + 1) % RESERVOIR_CAP;
+        if self.len < RESERVOIR_CAP {
+            self.len += 1;
+        }
+    }
+
+    /// Returns (p50, p95, p99) in µs, or None if empty.
+    /// Sorts a clone of the buffer — called at most once every snapshot interval.
+    fn percentiles(&self) -> Option<(i64, i64, i64)> {
+        if self.len == 0 {
+            return None;
+        }
+        let mut sorted = self.buf[..self.len].to_vec();
+        sorted.sort_unstable();
+        let n = sorted.len();
+        let p50 = sorted[(n * 50 / 100).min(n - 1)];
+        let p95 = sorted[(n * 95 / 100).min(n - 1)];
+        let p99 = sorted[(n * 99 / 100).min(n - 1)];
+        Some((p50, p95, p99))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SourceMetrics
+// ---------------------------------------------------------------------------
 
 /// Atomic per-source quality counters.
-/// All writes use Relaxed ordering — these are sampling metrics, not synchronisation.
+/// All atomic writes use Relaxed ordering — these are sampling metrics, not synchronisation.
 pub struct SourceMetrics {
     pub name: &'static str,
+    /// True for RPC-tier sources (rpc, geyser); false for shred-tier feeds.
+    /// Used by the dashboard to show `—` instead of 0 for shred-only columns.
+    pub is_rpc: bool,
 
     // Ingestion
     pub shreds_received: AtomicU64,
@@ -39,16 +128,20 @@ pub struct SourceMetrics {
     /// Number of lead-time samples where this source beat RPC (lead_time > 0)
     pub lead_wins: AtomicU64,
     pub lead_time_sum_us: AtomicI64,
-    /// Initialised to i64::MAX; updated via CAS loop
-    pub lead_time_min_us: AtomicI64,
-    /// Initialised to i64::MIN; updated via CAS loop
-    pub lead_time_max_us: AtomicI64,
+    /// Rolling reservoir of recent samples; sorted at snapshot time to compute percentiles.
+    lead_time_reservoir: Mutex<LeadTimeReservoir>,
+
+    /// Rolling log of per-slot decode outcomes emitted by the decoder.
+    /// Capped at SLOT_LOG_CAP; oldest entries are evicted when full.
+    /// Only populated for shred-type sources (never for RPC/Geyser).
+    slot_log: Mutex<VecDeque<SlotStats>>,
 }
 
 /// Plain-struct snapshot of SourceMetrics for display (no atomics).
 #[derive(Debug, Clone)]
 pub struct SourceMetricsSnapshot {
     pub name: &'static str,
+    pub is_rpc: bool,
     pub shreds_received: u64,
     pub bytes_received: u64,
     pub shreds_dropped: u64,
@@ -66,14 +159,18 @@ pub struct SourceMetricsSnapshot {
     pub lead_time_count: u64,
     pub lead_wins: u64,
     pub lead_time_sum_us: i64,
-    pub lead_time_min_us: i64,
-    pub lead_time_max_us: i64,
+    pub lead_time_p50_us: Option<i64>,
+    pub lead_time_p95_us: Option<i64>,
+    pub lead_time_p99_us: Option<i64>,
+    /// Per-slot decode outcomes from the rolling log (up to SLOT_LOG_CAP entries).
+    pub slot_log: Vec<SlotStats>,
 }
 
 impl SourceMetrics {
-    pub fn new(name: &'static str) -> Arc<Self> {
+    pub fn new(name: &'static str, is_rpc: bool) -> Arc<Self> {
         Arc::new(Self {
             name,
+            is_rpc,
             shreds_received: AtomicU64::new(0),
             bytes_received: AtomicU64::new(0),
             shreds_dropped: AtomicU64::new(0),
@@ -91,9 +188,19 @@ impl SourceMetrics {
             lead_time_count: AtomicU64::new(0),
             lead_wins: AtomicU64::new(0),
             lead_time_sum_us: AtomicI64::new(0),
-            lead_time_min_us: AtomicI64::new(i64::MAX),
-            lead_time_max_us: AtomicI64::new(i64::MIN),
+            lead_time_reservoir: Mutex::new(LeadTimeReservoir::new()),
+            slot_log: Mutex::new(VecDeque::with_capacity(SLOT_LOG_CAP)),
         })
+    }
+
+    /// Record a per-slot decode outcome from the shred decoder.
+    /// The log is bounded to SLOT_LOG_CAP entries; the oldest entry is dropped when full.
+    pub fn push_slot_stats(&self, stats: SlotStats) {
+        let mut log = self.slot_log.lock().unwrap();
+        if log.len() >= SLOT_LOG_CAP {
+            log.pop_front();
+        }
+        log.push_back(stats);
     }
 
     /// Outlier bounds for lead-time samples (µs).
@@ -114,22 +221,7 @@ impl SourceMetrics {
             self.lead_wins.fetch_add(1, Relaxed);
         }
         self.lead_time_sum_us.fetch_add(us, Relaxed);
-
-        let mut cur = self.lead_time_min_us.load(Relaxed);
-        while us < cur {
-            match self.lead_time_min_us.compare_exchange_weak(cur, us, Relaxed, Relaxed) {
-                Ok(_) => break,
-                Err(actual) => cur = actual,
-            }
-        }
-
-        let mut cur = self.lead_time_max_us.load(Relaxed);
-        while us > cur {
-            match self.lead_time_max_us.compare_exchange_weak(cur, us, Relaxed, Relaxed) {
-                Ok(_) => break,
-                Err(actual) => cur = actual,
-            }
-        }
+        self.lead_time_reservoir.lock().unwrap().push(us);
     }
 
     /// Mean lead time in µs, or None if no samples yet.
@@ -160,10 +252,25 @@ impl SourceMetrics {
         Some(first as f64 / (first + dup) as f64 * 100.0)
     }
 
-    /// Capture a consistent point-in-time snapshot (no locking; slight skew possible).
+    /// Capture a consistent point-in-time snapshot (slight skew possible on atomics;
+    /// reservoir lock is held only for the percentile sort).
     pub fn snapshot(&self) -> SourceMetricsSnapshot {
+        let (lead_p50, lead_p95, lead_p99) = {
+            let res = self.lead_time_reservoir.lock().unwrap();
+            res.percentiles()
+                .map_or((None, None, None), |(p50, p95, p99)| {
+                    (Some(p50), Some(p95), Some(p99))
+                })
+        };
+
+        let slot_log = {
+            let log = self.slot_log.lock().unwrap();
+            log.iter().cloned().collect()
+        };
+
         SourceMetricsSnapshot {
             name: self.name,
+            is_rpc: self.is_rpc,
             shreds_received: self.shreds_received.load(Relaxed),
             bytes_received: self.bytes_received.load(Relaxed),
             shreds_dropped: self.shreds_dropped.load(Relaxed),
@@ -181,8 +288,10 @@ impl SourceMetrics {
             lead_time_count: self.lead_time_count.load(Relaxed),
             lead_wins: self.lead_wins.load(Relaxed),
             lead_time_sum_us: self.lead_time_sum_us.load(Relaxed),
-            lead_time_min_us: self.lead_time_min_us.load(Relaxed),
-            lead_time_max_us: self.lead_time_max_us.load(Relaxed),
+            lead_time_p50_us: lead_p50,
+            lead_time_p95_us: lead_p95,
+            lead_time_p99_us: lead_p99,
+            slot_log,
         }
     }
 }
@@ -192,36 +301,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lead_time_min_max() {
-        let m = SourceMetrics::new("test");
-        m.record_lead_time_us(1000);
-        m.record_lead_time_us(500);
-        m.record_lead_time_us(5000);
-        m.record_lead_time_us(-200);
-        assert_eq!(m.lead_time_count.load(Relaxed), 4);
-        assert_eq!(m.lead_time_min_us.load(Relaxed), -200);
-        assert_eq!(m.lead_time_max_us.load(Relaxed), 5000);
+    fn test_lead_time_percentiles() {
+        let m = SourceMetrics::new("test", false);
+        // Insert 100 values 1µs..=100µs
+        for i in 1i64..=100 {
+            m.record_lead_time_us(i);
+        }
+        assert_eq!(m.lead_time_count.load(Relaxed), 100);
+        let snap = m.snapshot();
+        // sorted[0..100] = [1, 2, ..., 100]
+        // p50: idx = (100*50/100).min(99) = 50 → sorted[50] = 51
+        // p95: idx = (100*95/100).min(99) = 95 → sorted[95] = 96
+        // p99: idx = (100*99/100).min(99) = 99 → sorted[99] = 100
+        assert_eq!(snap.lead_time_p50_us, Some(51));
+        assert_eq!(snap.lead_time_p95_us, Some(96));
+        assert_eq!(snap.lead_time_p99_us, Some(100));
         let mean = m.mean_lead_time_us().unwrap();
-        assert!((mean - 1575.0).abs() < 0.1);
+        assert!((mean - 50.5).abs() < 0.1);
     }
 
     #[test]
     fn test_lead_time_outlier_cap() {
-        let m = SourceMetrics::new("test");
+        let m = SourceMetrics::new("test", false);
         m.record_lead_time_us(1_000_000);
         m.record_lead_time_us(-400_000);
-        m.record_lead_time_us(2_000_001);
-        m.record_lead_time_us(6_724_000);
-        m.record_lead_time_us(4_994_000);
-        m.record_lead_time_us(-500_001);
+        m.record_lead_time_us(2_000_001); // outlier, discarded
+        m.record_lead_time_us(6_724_000); // outlier, discarded
+        m.record_lead_time_us(4_994_000); // outlier, discarded
+        m.record_lead_time_us(-500_001);  // outlier, discarded
         assert_eq!(m.lead_time_count.load(Relaxed), 2);
-        assert_eq!(m.lead_time_min_us.load(Relaxed), -400_000);
-        assert_eq!(m.lead_time_max_us.load(Relaxed), 1_000_000);
+        let snap = m.snapshot();
+        assert!(snap.lead_time_p50_us.is_some());
+        assert!(snap.lead_time_p99_us.is_some());
     }
 
     #[test]
     fn test_win_rate() {
-        let m = SourceMetrics::new("test");
+        let m = SourceMetrics::new("test", false);
         assert!(m.win_rate().is_none());
         m.txs_first.fetch_add(7, Relaxed);
         m.txs_duplicate.fetch_add(3, Relaxed);
@@ -231,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_coverage_pct() {
-        let m = SourceMetrics::new("test");
+        let m = SourceMetrics::new("test", false);
         assert!(m.coverage_pct().is_none());
         m.coverage_shreds_seen.store(67, Relaxed);
         m.coverage_shreds_expected.store(100, Relaxed);
@@ -241,12 +357,25 @@ mod tests {
 
     #[test]
     fn test_snapshot() {
-        let m = SourceMetrics::new("snap");
+        let m = SourceMetrics::new("snap", false);
         m.shreds_received.store(100, Relaxed);
         m.txs_decoded.store(42, Relaxed);
         let s = m.snapshot();
         assert_eq!(s.name, "snap");
         assert_eq!(s.shreds_received, 100);
         assert_eq!(s.txs_decoded, 42);
+        assert!(s.lead_time_p50_us.is_none());
+    }
+
+    #[test]
+    fn test_reservoir_wraps() {
+        let m = SourceMetrics::new("wrap", false);
+        // Fill past capacity; all values are the same constant
+        for _ in 0..RESERVOIR_CAP + 100 {
+            m.record_lead_time_us(500_000);
+        }
+        let snap = m.snapshot();
+        assert_eq!(snap.lead_time_p50_us, Some(500_000));
+        assert_eq!(snap.lead_time_p99_us, Some(500_000));
     }
 }

@@ -17,7 +17,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use crate::metrics;
-use crate::source_metrics::SourceMetrics;
+use crate::source_metrics::{SlotOutcome, SlotStats, SourceMetrics};
 
 // ---------------------------------------------------------------------------
 // Raw shred header parsing
@@ -189,6 +189,10 @@ struct SlotState {
     last_touch_ns: u64,
     /// Number of transactions decoded from this slot
     txs_decoded: u32,
+    /// Unique data shreds received (direct + FEC-recovered)
+    shreds_seen: u32,
+    /// Data shreds reconstructed via Reed-Solomon FEC for this slot
+    fec_recovered_count: u32,
     /// Whether this slot has already been counted in slot outcome metrics
     counted: bool,
     /// Whether the first Entry boundary has been located within entry_buf.
@@ -209,6 +213,8 @@ impl SlotState {
             last_seen: false,
             last_touch_ns: now,
             txs_decoded: 0,
+            shreds_seen: 0,
+            fec_recovered_count: 0,
             counted: false,
             boundary_scanned: false,
         }
@@ -416,8 +422,22 @@ impl ShredDecoder {
                     if !state.counted {
                         if state.txs_decoded > 0 {
                             self.metrics.slots_partial.fetch_add(1, Relaxed);
+                            self.metrics.push_slot_stats(SlotStats {
+                                slot: s,
+                                shreds_seen: state.shreds_seen,
+                                fec_recovered: state.fec_recovered_count,
+                                txs_decoded: state.txs_decoded,
+                                outcome: SlotOutcome::Partial,
+                            });
                         } else {
                             self.metrics.slots_dropped.fetch_add(1, Relaxed);
+                            self.metrics.push_slot_stats(SlotStats {
+                                slot: s,
+                                shreds_seen: state.shreds_seen,
+                                fec_recovered: state.fec_recovered_count,
+                                txs_decoded: 0,
+                                outcome: SlotOutcome::Dropped,
+                            });
                         }
                     }
                     false
@@ -503,6 +523,8 @@ impl ShredDecoder {
                             self.metrics
                                 .coverage_shreds_seen
                                 .fetch_add(recovered_count, Relaxed);
+                            slot_state.shreds_seen += recovered_count as u32;
+                            slot_state.fec_recovered_count += recovered_count as u32;
 
                             slot_state.flush_contiguous();
 
@@ -512,6 +534,13 @@ impl ShredDecoder {
                             {
                                 self.metrics.slots_complete.fetch_add(1, Relaxed);
                                 slot_state.counted = true;
+                                self.metrics.push_slot_stats(SlotStats {
+                                    slot,
+                                    shreds_seen: slot_state.shreds_seen,
+                                    fec_recovered: slot_state.fec_recovered_count,
+                                    txs_decoded: slot_state.txs_decoded,
+                                    outcome: SlotOutcome::Complete,
+                                });
                             }
 
                             let txs = slot_state.try_deserialize();
@@ -578,12 +607,21 @@ impl ShredDecoder {
                 state.last_seen = true;
             }
 
-            state.data_payloads.insert(shred_index, payload);
+            if state.data_payloads.insert(shred_index, payload).is_none() {
+                state.shreds_seen += 1;
+            }
             state.flush_contiguous();
 
             if state.last_seen && state.next_contiguous > state.max_index && !state.counted {
                 self.metrics.slots_complete.fetch_add(1, Relaxed);
                 state.counted = true;
+                self.metrics.push_slot_stats(SlotStats {
+                    slot,
+                    shreds_seen: state.shreds_seen,
+                    fec_recovered: state.fec_recovered_count,
+                    txs_decoded: state.txs_decoded,
+                    outcome: SlotOutcome::Complete,
+                });
             }
 
             let txs = state.try_deserialize();

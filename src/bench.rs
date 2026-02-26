@@ -7,6 +7,7 @@
 use anyhow::Result;
 use serde::Serialize;
 use shred_ingest::{DecodedTx, FanInSource, SourceMetricsSnapshot};
+use shred_ingest::source_metrics::SlotStats;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -36,9 +37,13 @@ pub struct SourceReport {
     pub txs_per_sec: f64,
     pub win_rate_pct: Option<f64>,
     pub lead_time_mean_us: Option<f64>,
-    pub lead_time_min_us: Option<i64>,
-    pub lead_time_max_us: Option<i64>,
+    pub lead_time_p50_us: Option<i64>,
+    pub lead_time_p95_us: Option<i64>,
+    pub lead_time_p99_us: Option<i64>,
     pub lead_time_samples: u64,
+    /// Per-slot decode outcomes (shred sources only; up to 500 most recent slots).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub slot_breakdown: Vec<SlotStats>,
 }
 
 pub fn run(config: &ProbeConfig, duration_secs: u64, output: Option<PathBuf>) -> Result<()> {
@@ -55,6 +60,7 @@ pub fn run(config: &ProbeConfig, duration_secs: u64, output: Option<PathBuf>) ->
     );
 
     let mut fan_in = FanInSource::new();
+    fan_in.filter_programs = config.filter_programs.clone();
 
     for entry in &config.sources {
         let (source, metrics) = build_source(entry)?;
@@ -140,13 +146,10 @@ fn source_report(s: &SourceMetricsSnapshot, elapsed_secs: f64) -> SourceReport {
         }
     };
 
-    let (lead_mean, lead_min, lead_max) = if s.lead_time_count > 0 {
-        let mean = s.lead_time_sum_us as f64 / s.lead_time_count as f64;
-        let min = if s.lead_time_min_us == i64::MAX { None } else { Some(s.lead_time_min_us) };
-        let max = if s.lead_time_max_us == i64::MIN { None } else { Some(s.lead_time_max_us) };
-        (Some(mean), min, max)
+    let lead_mean = if s.lead_time_count > 0 {
+        Some(s.lead_time_sum_us as f64 / s.lead_time_count as f64)
     } else {
-        (None, None, None)
+        None
     };
 
     SourceReport {
@@ -165,8 +168,10 @@ fn source_report(s: &SourceMetricsSnapshot, elapsed_secs: f64) -> SourceReport {
         txs_per_sec: s.txs_decoded as f64 / elapsed_secs,
         win_rate_pct,
         lead_time_mean_us: lead_mean,
-        lead_time_min_us: lead_min,
-        lead_time_max_us: lead_max,
+        lead_time_p50_us: s.lead_time_p50_us,
+        lead_time_p95_us: s.lead_time_p95_us,
+        lead_time_p99_us: s.lead_time_p99_us,
         lead_time_samples: s.lead_time_count,
+        slot_breakdown: s.slot_log.clone(),
     }
 }

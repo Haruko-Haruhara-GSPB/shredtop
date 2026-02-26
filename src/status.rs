@@ -34,7 +34,7 @@ pub fn run() -> Result<()> {
         .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| "unknown".into());
 
-    let width = 96;
+    let width = 100;
     println!("{:=<width$}", "");
     println!(
         "{:^width$}",
@@ -43,15 +43,15 @@ pub fn run() -> Result<()> {
     println!("{:=<width$}", "");
     println!();
     println!(
-        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}",
-        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD min", "LEAD max",
+        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
     );
     println!("{:-<width$}", "");
 
     if let Some(sources) = entry["sources"].as_array() {
         for s in sources {
             let name = s["name"].as_str().unwrap_or("?");
-            let is_rpc = name == "rpc";
+            let is_rpc = s["is_rpc"].as_bool().unwrap_or(false);
 
             let shreds_str = if is_rpc {
                 "—".into()
@@ -75,24 +75,27 @@ pub fn run() -> Result<()> {
                     .map(|p| format!("{:.0}%", p))
                     .unwrap_or_else(|| "—".into())
             };
-            let (avg_str, min_str, max_str) = if is_rpc {
-                ("baseline".into(), "—".into(), "—".into())
+            let (avg_str, p50_str, p95_str, p99_str) = if is_rpc {
+                ("baseline".into(), "—".into(), "—".into(), "—".into())
             } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
                 let avg = format!("{:+.1}ms", mean_us / 1000.0);
-                let min = s["lead_time_min_us"].as_f64()
+                let p50 = s["lead_time_p50_us"].as_f64()
                     .map(|v| format!("{:+.1}ms", v / 1000.0))
                     .unwrap_or_else(|| "—".into());
-                let max = s["lead_time_max_us"].as_f64()
+                let p95 = s["lead_time_p95_us"].as_f64()
                     .map(|v| format!("{:+.1}ms", v / 1000.0))
                     .unwrap_or_else(|| "—".into());
-                (avg, min, max)
+                let p99 = s["lead_time_p99_us"].as_f64()
+                    .map(|v| format!("{:+.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                (avg, p50, p95, p99)
             } else {
-                ("—".into(), "—".into(), "—".into())
+                ("—".into(), "—".into(), "—".into(), "—".into())
             };
 
             println!(
-                "{:<20}  {:>9}  {:>5}  {:>6.0}  {:>6}  {:>9}  {:>9}  {:>9}",
-                name, shreds_str, cov, txs, beat, avg_str, min_str, max_str,
+                "{:<20}  {:>9}  {:>5}  {:>6.0}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+                name, shreds_str, cov, txs, beat, avg_str, p50_str, p95_str, p99_str,
             );
         }
     }

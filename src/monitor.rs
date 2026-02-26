@@ -7,7 +7,7 @@
 use anyhow::Result;
 use chrono::{TimeZone, Utc};
 use libc;
-use shred_ingest::{RpcTxSource, ShredTxSource, SourceMetrics};
+use shred_ingest::{GeyserTxSource, JitoShredstreamSource, RpcTxSource, ShredTxSource, SourceMetrics};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -88,7 +88,7 @@ fn read_last_entry(path: &str) -> Option<serde_json::Value> {
 }
 
 fn draw_dashboard(entry: &serde_json::Value) -> usize {
-    const W: usize = 96;
+    const W: usize = 100;
     let mut out: Vec<String> = Vec::new();
 
     // Timestamp from log entry
@@ -107,8 +107,8 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
     // Column headers
     out.push(format!(
-        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}",
-        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD min", "LEAD max",
+        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
     ));
     out.push("-".repeat(W));
 
@@ -118,7 +118,7 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     if let Some(sources) = entry["sources"].as_array() {
         for s in sources {
             let name = s["name"].as_str().unwrap_or("?");
-            let is_rpc = name == "rpc";
+            let is_rpc = s["is_rpc"].as_bool().unwrap_or(false);
             if is_rpc {
                 has_rpc = true;
             }
@@ -145,24 +145,27 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
             let txs_str = format!("{:.0}", s["txs_per_sec"].as_f64().unwrap_or(0.0));
 
-            let (avg_str, min_str, max_str) = if is_rpc {
-                ("baseline".into(), "—".into(), "—".into())
+            let (avg_str, p50_str, p95_str, p99_str) = if is_rpc {
+                ("baseline".into(), "—".into(), "—".into(), "—".into())
             } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
                 let avg = format!("{:+.1}ms", mean_us / 1000.0);
-                let min = s["lead_time_min_us"].as_f64()
+                let p50 = s["lead_time_p50_us"].as_f64()
                     .map(|v| format!("{:+.1}ms", v / 1000.0))
                     .unwrap_or_else(|| "—".into());
-                let max = s["lead_time_max_us"].as_f64()
+                let p95 = s["lead_time_p95_us"].as_f64()
                     .map(|v| format!("{:+.1}ms", v / 1000.0))
                     .unwrap_or_else(|| "—".into());
-                (avg, min, max)
+                let p99 = s["lead_time_p99_us"].as_f64()
+                    .map(|v| format!("{:+.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                (avg, p50, p95, p99)
             } else {
-                ("—".into(), "—".into(), "—".into())
+                ("—".into(), "—".into(), "—".into(), "—".into())
             };
 
             out.push(format!(
-                "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}",
-                name, shreds_str, cov_str, txs_str, beat_str, avg_str, min_str, max_str,
+                "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+                name, shreds_str, cov_str, txs_str, beat_str, avg_str, p50_str, p95_str, p99_str,
             ));
 
             // Edge assessment for shred sources
@@ -209,7 +212,7 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     out.push("-".repeat(W));
     out.push(
         "COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  \
-         LEAD = ms before RPC confirms"
+         LEAD = ms before RPC confirms  p50/p95/p99 = percentiles"
             .into(),
     );
 
@@ -228,7 +231,9 @@ pub fn build_source(
     entry: &SourceEntry,
 ) -> Result<(Box<dyn shred_ingest::TxSource>, Arc<SourceMetrics>)> {
     let name: &'static str = Box::leak(entry.name.clone().into_boxed_str());
-    let metrics = SourceMetrics::new(name);
+    // rpc and geyser are baseline sources; shred and jito-grpc are shred-tier feeds.
+    let is_rpc = matches!(entry.source_type.as_str(), "rpc" | "geyser");
+    let metrics = SourceMetrics::new(name, is_rpc);
 
     let source: Box<dyn shred_ingest::TxSource> = match entry.source_type.as_str() {
         "shred" => {
@@ -256,6 +261,20 @@ pub fn build_source(
                 .clone()
                 .unwrap_or_else(|| "http://127.0.0.1:8899".into());
             Box::new(RpcTxSource { url, pin_core: entry.pin_recv_core })
+        }
+        "geyser" => {
+            let url = entry
+                .url
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("source '{}': missing url for geyser source", name))?;
+            Box::new(GeyserTxSource { name, url, x_token: entry.x_token.clone() })
+        }
+        "jito-grpc" => {
+            let url = entry
+                .url
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("source '{}': missing url for jito-grpc source", name))?;
+            Box::new(JitoShredstreamSource { name, url })
         }
         other => {
             anyhow::bail!("unknown source_type '{}' for source '{}'", other, name);

@@ -9,6 +9,12 @@ use std::path::Path;
 pub struct ProbeConfig {
     #[serde(default)]
     pub sources: Vec<SourceEntry>,
+    /// Optional list of program or account pubkeys (base58). When non-empty, only
+    /// transactions whose static account keys include at least one of these pubkeys
+    /// are included in lead-time statistics. Applies to shred-tier sources only;
+    /// RPC-tier sources (rpc, geyser, jito-grpc) are always exempt.
+    #[serde(default)]
+    pub filter_programs: Vec<String>,
 }
 
 /// One data source (shred feed or RPC endpoint).
@@ -25,8 +31,10 @@ pub struct SourceEntry {
     pub port: Option<u16>,
     /// Network interface for multicast (shred only, e.g. "doublezero1")
     pub interface: Option<String>,
-    /// RPC endpoint URL (rpc only)
+    /// RPC endpoint URL (rpc or geyser)
     pub url: Option<String>,
+    /// Authentication token sent as `x-token` header (geyser only)
+    pub x_token: Option<String>,
     /// CPU core to pin receiver thread to (optional)
     pub pin_recv_core: Option<usize>,
     /// CPU core to pin decoder thread to (optional)
@@ -45,6 +53,7 @@ impl ProbeConfig {
     /// Returns a default config that matches the standard DoubleZero + RPC setup.
     pub fn default_example() -> Self {
         Self {
+            filter_programs: Vec::new(),
             sources: vec![
                 SourceEntry {
                     name: "bebop".into(),
@@ -53,6 +62,7 @@ impl ProbeConfig {
                     port: Some(20001),
                     interface: Some("doublezero1".into()),
                     url: None,
+                    x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
                 },
@@ -63,6 +73,7 @@ impl ProbeConfig {
                     port: Some(20001),
                     interface: Some("doublezero1".into()),
                     url: None,
+                    x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
                 },
@@ -73,6 +84,7 @@ impl ProbeConfig {
                     port: None,
                     interface: None,
                     url: Some("http://127.0.0.1:8899".into()),
+                    x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
                 },

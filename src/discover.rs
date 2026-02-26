@@ -63,10 +63,11 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
                 port: None,
                 interface: None,
                 url: Some(rpc_url),
+                x_token: None,
                 pin_recv_core: None,
                 pin_decode_core: None,
             });
-            let cfg = ProbeConfig { sources };
+            let cfg = ProbeConfig { sources, filter_programs: Vec::new() };
             let toml_str = toml::to_string_pretty(&cfg)?;
             std::fs::write(config_path, toml_str)?;
             println!("Written to {}.", config_path.display());
@@ -183,6 +184,7 @@ fn detect_sources(
                 port: Some(20001),
                 interface: Some(iface.clone()),
                 url: None,
+                x_token: None,
                 pin_recv_core: None,
                 pin_decode_core: None,
             })
