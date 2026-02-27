@@ -1,12 +1,16 @@
 //! Pipeline latency instrumentation.
 //!
 //! Provides nanosecond-resolution timestamps and per-stage duration accumulators.
-//! On Linux, timestamps use `CLOCK_MONOTONIC_RAW` (immune to NTP slew).
-//! On other platforms, an `Instant`-based fallback is used.
+//! On Linux, timestamps use `CLOCK_REALTIME` to match the kernel's `SO_TIMESTAMPNS`
+//! clock, so shred receive timestamps and RPC receive timestamps are directly comparable.
+//! On other platforms, `SystemTime` is used.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Nanosecond timestamp via `CLOCK_MONOTONIC_RAW` (Linux) or `Instant` (other platforms).
+/// Nanosecond timestamp via `CLOCK_REALTIME` (Linux) or `SystemTime` (other platforms).
+///
+/// Must match the clock used by the kernel's `SO_TIMESTAMPNS` option so that shred
+/// receive timestamps and RPC wall-clock timestamps can be subtracted directly.
 #[inline(always)]
 pub fn now_ns() -> u64 {
     #[cfg(target_os = "linux")]
@@ -16,16 +20,17 @@ pub fn now_ns() -> u64 {
             tv_nsec: 0,
         };
         unsafe {
-            libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW, &mut ts);
+            libc::clock_gettime(libc::CLOCK_REALTIME, &mut ts);
         }
         (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        use std::time::Instant;
-        static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-        let epoch = EPOCH.get_or_init(Instant::now);
-        epoch.elapsed().as_nanos() as u64
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64
     }
 }
 
