@@ -40,7 +40,7 @@ pub enum Commands {
     /// Requires the service to be running first.
     Monitor {
         /// Dashboard refresh interval in seconds
-        #[clap(long, default_value = "5")]
+        #[clap(long, default_value = "15")]
         interval: u64,
     },
 
@@ -72,7 +72,7 @@ pub enum Commands {
     #[clap(hide = true)]
     Run {
         /// Snapshot interval in seconds
-        #[clap(long, default_value = "5")]
+        #[clap(long, default_value = "15")]
         interval: u64,
 
         /// Path to write metrics log (JSONL)
