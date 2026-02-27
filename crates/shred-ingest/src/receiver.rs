@@ -35,6 +35,11 @@ pub struct ShredReceiver {
     /// Optional shred version filter (bytes 77-78). Shreds with a different
     /// version are silently dropped before they reach the decoder.
     shred_version: Option<u16>,
+    /// CLOCK_REALTIME − CLOCK_MONOTONIC_RAW sampled at construction time (ns).
+    /// Applied to every SO_TIMESTAMPNS kernel timestamp to bring it into the
+    /// CLOCK_MONOTONIC_RAW reference frame used by the rest of the pipeline.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    rt_to_mono_offset_ns: u64,
 }
 
 // Standard Solana shred MTU — used by both Linux and fallback paths.
@@ -119,7 +124,9 @@ impl ShredReceiver {
         #[cfg(not(target_os = "linux"))]
         socket.set_recv_buffer_size(4 * 1024 * 1024)?;
 
-        Ok(Self { socket, tx, metrics, shred_version })
+        let rt_to_mono_offset_ns = sample_rt_to_mono_offset_ns();
+
+        Ok(Self { socket, tx, metrics, shred_version, rt_to_mono_offset_ns })
     }
 
     /// Main receive loop — should run on a pinned, isolated core.
@@ -195,8 +202,11 @@ impl ShredReceiver {
                     }
                 }
 
-                // Prefer kernel timestamp; fall back to userspace clock.
-                let ts = kernel_ts(&msgs[i].msg_hdr).unwrap_or_else(metrics::now_ns);
+                // Prefer kernel timestamp (CLOCK_REALTIME) converted to
+                // CLOCK_MONOTONIC_RAW; fall back to userspace clock.
+                let ts = kernel_ts(&msgs[i].msg_hdr)
+                    .map(|rt| rt.saturating_sub(self.rt_to_mono_offset_ns))
+                    .unwrap_or_else(metrics::now_ns);
 
                 self.metrics.shreds_received.fetch_add(1, Relaxed);
                 self.metrics.bytes_received.fetch_add(len as u64, Relaxed);
@@ -277,6 +287,39 @@ impl ShredReceiver {
             let _ = interface;
             Ok(Ipv4Addr::LOCALHOST)
         }
+    }
+}
+
+/// Sample CLOCK_REALTIME − CLOCK_MONOTONIC_RAW once at startup.
+///
+/// SO_TIMESTAMPNS delivers CLOCK_REALTIME timestamps. Subtracting this offset
+/// converts them into the CLOCK_MONOTONIC_RAW frame used by `metrics::now_ns()`.
+/// The offset is stable over the service lifetime (NTP slew is negligible vs
+/// our ~300 ms lead times). We take the minimum of 8 paired samples to reduce
+/// the effect of scheduler preemption between the two `clock_gettime` calls.
+fn sample_rt_to_mono_offset_ns() -> u64 {
+    #[cfg(target_os = "linux")]
+    {
+        let read_rt = || unsafe {
+            let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+            libc::clock_gettime(libc::CLOCK_REALTIME, &mut ts);
+            ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+        };
+        let read_mono = || unsafe {
+            let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+            libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW, &mut ts);
+            ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+        };
+        // Read RT then MONO in tight succession; take min over 8 rounds to
+        // minimise preemption-induced inflation of the difference.
+        (0..8)
+            .map(|_| read_rt().saturating_sub(read_mono()))
+            .min()
+            .unwrap_or(0)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        0
     }
 }
 
