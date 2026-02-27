@@ -212,6 +212,68 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     }
 
     out.push("-".repeat(W));
+
+    // Shred race section — directly under the feed table, before edge assessment
+    out.push(String::new());
+    out.push("SHRED RACE  (shred-level, since start):".into());
+    let race_pairs = entry["shred_race"].as_array();
+    let has_race = race_pairs.map(|p| !p.is_empty()).unwrap_or(false);
+    if !has_race {
+        out.push(
+            "  No races yet — waiting for same slot to appear on multiple shred feeds.".into(),
+        );
+    } else {
+        out.push(format!(
+            "  {:<52}  {:>9}  {:>10}  {:>9}  {:>9}",
+            "WINNER (WIN%)  vs  LOSER (WIN%)", "RACES", "LEAD avg", "LEAD p50", "LEAD p95",
+        ));
+        // Sort by most-matched first so the most informative pair is at top
+        let mut pairs: Vec<&serde_json::Value> =
+            race_pairs.unwrap().iter().collect();
+        pairs.sort_by(|a, b| {
+            let ma = a["total_matched"].as_u64().unwrap_or(0);
+            let mb = b["total_matched"].as_u64().unwrap_or(0);
+            mb.cmp(&ma)
+        });
+        for p in pairs {
+            let sa = p["source_a"].as_str().unwrap_or("?");
+            let sb = p["source_b"].as_str().unwrap_or("?");
+            let matched = p["total_matched"].as_u64().unwrap_or(0);
+            let a_pct = p["a_win_pct"].as_f64().unwrap_or(0.0);
+            let b_pct = 100.0 - a_pct;
+            // Put the winner (higher win%) on the left
+            let (winner, w_pct, loser, l_pct) = if a_pct >= b_pct {
+                (sa, a_pct, sb, b_pct)
+            } else {
+                (sb, b_pct, sa, a_pct)
+            };
+            let pair_str = format!(
+                "{} ({:.1}%)  vs  {} ({:.1}%)",
+                winner, w_pct, loser, l_pct
+            );
+            let avg_str = p["lead_mean_us"]
+                .as_f64()
+                .map(|v| format!("+{:.2}ms", v / 1000.0))
+                .unwrap_or_else(|| "—".into());
+            let p50_str = p["lead_p50_us"]
+                .as_f64()
+                .map(|v| format!("+{:.1}ms", v / 1000.0))
+                .unwrap_or_else(|| "—".into());
+            let p95_str = p["lead_p95_us"]
+                .as_f64()
+                .map(|v| format!("+{:.1}ms", v / 1000.0))
+                .unwrap_or_else(|| "—".into());
+            out.push(format!(
+                "  {:<52}  {:>9}  {:>10}  {:>9}  {:>9}",
+                pair_str,
+                format_num(matched),
+                avg_str,
+                p50_str,
+                p95_str,
+            ));
+        }
+    }
+
     out.push(String::new());
 
     // Edge assessment
@@ -235,56 +297,6 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
          LEAD = ms before RPC confirms  p50/p95/p99 = percentiles"
             .into(),
     );
-
-    // Shred race section
-    out.push(String::new());
-    out.push("SHRED RACE  (since service start):".into());
-    if let Some(pairs) = entry["shred_race"].as_array() {
-        if pairs.is_empty() {
-            out.push(
-                "  No shred-level races recorded yet — feeds may relay different slots.".into(),
-            );
-        } else {
-            out.push(format!(
-                "  {:<35}  {:>9}  {:>8}  {:>8}  {:>10}  {:>9}  {:>9}",
-                "PAIR", "MATCHED", "A-WINS", "B-WINS", "LEAD avg", "LEAD p50", "LEAD p95",
-            ));
-            for p in pairs {
-                let sa = p["source_a"].as_str().unwrap_or("?");
-                let sb = p["source_b"].as_str().unwrap_or("?");
-                let pair_str = format!("{} vs {}", sa, sb);
-                let matched = p["total_matched"].as_u64().unwrap_or(0);
-                let a_pct = p["a_win_pct"].as_f64().unwrap_or(0.0);
-                let b_pct = 100.0 - a_pct;
-                let avg_str = p["lead_mean_us"]
-                    .as_f64()
-                    .map(|v| format!("+{:.2}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                let p50_str = p["lead_p50_us"]
-                    .as_f64()
-                    .map(|v| format!("+{:.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                let p95_str = p["lead_p95_us"]
-                    .as_f64()
-                    .map(|v| format!("+{:.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                out.push(format!(
-                    "  {:<35}  {:>9}  {:>7.1}%  {:>7.1}%  {:>10}  {:>9}  {:>9}",
-                    pair_str,
-                    format_num(matched),
-                    a_pct,
-                    b_pct,
-                    avg_str,
-                    p50_str,
-                    p95_str,
-                ));
-            }
-        }
-    } else {
-        out.push(
-            "  No shred-level races recorded yet — feeds may relay different slots.".into(),
-        );
-    }
 
     let count = out.len();
     for line in out {
