@@ -74,6 +74,11 @@ pub fn run_from_source() -> Result<()> {
             .status()?
             .success();
         anyhow::ensure!(ok, "git fetch failed");
+        // Show what changed before resetting
+        Command::new("git")
+            .args(["-C", repo_str, "diff", "--stat", "HEAD", "origin/main"])
+            .status()
+            .ok();
         // Hard-reset to origin/main — clean tree, no local drift.
         let ok = Command::new("git")
             .args(["-C", repo_str, "reset", "--hard", "origin/main"])
@@ -91,7 +96,7 @@ pub fn run_from_source() -> Result<()> {
 
     println!("Building...");
     let ok = Command::new("cargo")
-        .args(["build", "--release", "--quiet"])
+        .args(["build", "--release"])
         .current_dir(&repo)
         .status()?
         .success();
