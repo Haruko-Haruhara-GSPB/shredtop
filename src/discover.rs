@@ -270,6 +270,13 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
         std::fs::write(config_path, toml_str)?;
         println!();
         println!("Written to {}.", config_path.display());
+
+        // Restart the background service so the new config takes effect.
+        let _ = std::process::Command::new("systemctl")
+            .args(["restart", "shredder"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     } else {
         println!();
         println!("No sources selected — probe.toml not modified.");
