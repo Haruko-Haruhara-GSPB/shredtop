@@ -40,6 +40,10 @@ struct SourceSnap<'a> {
     lead_time_p99_us: Option<i64>,
     lead_time_samples: u64,
     txs_per_sec: f64,
+    /// Total transactions this source won the dedup race (first arrival, cumulative)
+    txs_first: u64,
+    /// Total transactions this source arrived as a duplicate (matched another source, cumulative)
+    txs_duplicate: u64,
 }
 
 pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Result<()> {
@@ -154,5 +158,7 @@ fn make_snap<'a>(
         lead_time_p99_us: c.lead_time_p99_us,
         lead_time_samples: c.lead_time_count,
         txs_per_sec: txs_delta as f64 / elapsed,
+        txs_first: c.txs_first,
+        txs_duplicate: c.txs_duplicate,
     }
 }

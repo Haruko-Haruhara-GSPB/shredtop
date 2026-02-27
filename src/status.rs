@@ -122,6 +122,22 @@ pub fn run() -> Result<()> {
 
     println!("{:-<width$}", "");
     println!();
+
+    // Dedup diagnostics: txs_first / txs_duplicate (cumulative since start)
+    println!("DEDUP (cumulative since start):");
+    println!(
+        "  {:<20}  {:>10}  {:>12}",
+        "SOURCE", "TXS_FIRST", "TXS_DUPLICATE"
+    );
+    if let Some(sources) = entry["sources"].as_array() {
+        for s in sources {
+            let name = s["name"].as_str().unwrap_or("?");
+            let first = s["txs_first"].as_u64().unwrap_or(0);
+            let dup = s["txs_duplicate"].as_u64().unwrap_or(0);
+            println!("  {:<20}  {:>10}  {:>12}", name, first, dup);
+        }
+    }
+    println!();
     println!("Log: {}  (shredder service status for service health)", DEFAULT_LOG);
 
     Ok(())
