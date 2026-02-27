@@ -15,135 +15,266 @@ use std::time::Duration;
 use crate::config::{ProbeConfig, SourceEntry};
 
 pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
-    println!("=== DoubleZero available groups ===");
-    // Returns multicast_ip → (code, Option<port>). Port is Some if the DZ CLI
-    // returns it in the JSON; None means we need to detect from traffic.
-    let dz_groups = collect_and_show_dz_groups();
+    // -----------------------------------------------------------------------
+    // Configured sources
+    // -----------------------------------------------------------------------
+    println!("=== Configured sources (probe.toml) ===");
+    show_configured_sources(config);
 
+    // -----------------------------------------------------------------------
+    // Active multicast memberships (ip maddr show)
+    // -----------------------------------------------------------------------
     println!();
     println!("=== Active multicast memberships ===");
     let memberships = collect_and_show_memberships();
 
+    // -----------------------------------------------------------------------
+    // DoubleZero group selection
+    // -----------------------------------------------------------------------
     println!();
-    println!("=== Configured sources (probe.toml) ===");
-    show_configured_sources(config);
+    println!("=== DoubleZero multicast groups ===");
+    let mut dz_sources: Vec<SourceEntry> = Vec::new();
 
-    // For subscribed groups not covered by CLI-provided port info, sniff
-    // live traffic to detect which UDP port the shreds actually arrive on.
-    let needs_sniff: Vec<(String, String)> = memberships
-        .iter()
-        .filter(|(ip, _)| {
-            dz_groups
-                .get(*ip)
-                .and_then(|(_, p)| *p)
-                .is_none()
-        })
-        .map(|(ip, iface): (&String, &String)| (ip.clone(), iface.clone()))
-        .collect();
+    match fetch_dz_groups() {
+        None => {
+            println!("  doublezero CLI not found.");
+            println!("  Install: https://docs.malbeclabs.com/setup/");
+            println!("  (DoubleZero feeds can be added manually in the next step)");
+        }
+        Some(groups) if groups.is_empty() => {
+            println!("  No groups returned by doublezero CLI.");
+        }
+        Some(groups) => {
+            // Print table with [subscribed] marker
+            println!(
+                "  {:<4} {:<22} {:<16} {:>4} {:>4}  {:<12}  {}",
+                "#", "CODE", "MULTICAST IP", "PUB", "SUB", "STATUS", ""
+            );
+            println!("  {}", "-".repeat(76));
+            let subscribed_indices: Vec<usize> = groups
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| memberships.contains_key(&g.multicast_ip))
+                .map(|(i, _)| i)
+                .collect();
+            for (i, g) in groups.iter().enumerate() {
+                let marker = if memberships.contains_key(&g.multicast_ip) {
+                    "[subscribed]"
+                } else {
+                    ""
+                };
+                println!(
+                    "  {:<4} {:<22} {:<16} {:>4} {:>4}  {:<12}  {}",
+                    i + 1,
+                    g.code,
+                    g.multicast_ip,
+                    g.publishers,
+                    g.subscribers,
+                    g.status,
+                    marker
+                );
+            }
+            println!();
 
-    let traffic_ports: HashMap<String, u16> = if !needs_sniff.is_empty() {
-        println!();
-        print!("Sniffing shred ports from live traffic (3s)...");
-        io::stdout().flush().ok();
-        let ports = detect_shred_ports_from_traffic(&needs_sniff);
-        println!(" done.");
-        if !ports.is_empty() {
-            for (ip, port) in &ports {
-                println!("  {} → port {}", ip, port);
+            // Default = subscribed groups
+            let default_str = if subscribed_indices.is_empty() {
+                "none".to_string()
+            } else {
+                subscribed_indices
+                    .iter()
+                    .map(|i| (i + 1).to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+
+            print!(
+                "Select groups to include [{}] (comma-separated numbers, or Enter for default): ",
+                default_str
+            );
+            io::stdout().flush().ok();
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).ok();
+            let input = input.trim().to_string();
+
+            let selected_indices: Vec<usize> = if input.is_empty() {
+                subscribed_indices.clone()
+            } else {
+                input
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<usize>().ok())
+                    .filter(|&i| i >= 1 && i <= groups.len())
+                    .map(|i| i - 1)
+                    .collect()
+            };
+
+            if !selected_indices.is_empty() {
+                // Sniff ports from live traffic for selected groups that are subscribed
+                let needs_sniff: Vec<(String, String)> = selected_indices
+                    .iter()
+                    .filter_map(|&i| {
+                        let g = &groups[i];
+                        memberships
+                            .get(&g.multicast_ip)
+                            .map(|iface| (g.multicast_ip.clone(), iface.clone()))
+                    })
+                    .collect();
+
+                let traffic_ports: HashMap<String, u16> = if !needs_sniff.is_empty() {
+                    print!("  Sniffing shred ports from live traffic (3s)...");
+                    io::stdout().flush().ok();
+                    let ports = detect_shred_ports_from_traffic(&needs_sniff);
+                    println!(" done.");
+                    for (ip, port) in &ports {
+                        println!("    {} → port {}", ip, port);
+                    }
+                    ports
+                } else {
+                    HashMap::new()
+                };
+
+                // Build a SourceEntry for each selected group
+                for &i in &selected_indices {
+                    let g = &groups[i];
+                    let iface = memberships
+                        .get(&g.multicast_ip)
+                        .cloned()
+                        .unwrap_or_else(|| "doublezero1".to_string());
+
+                    // Port priority: traffic sniff → known defaults → user prompt
+                    let port: Option<u16> = traffic_ports
+                        .get(&g.multicast_ip)
+                        .copied()
+                        .or_else(|| known_port_for_group(&g.code));
+
+                    let port = if let Some(p) = port {
+                        if traffic_ports.contains_key(&g.multicast_ip) {
+                            // detected from traffic — already printed above
+                        } else {
+                            println!(
+                                "  {} — no traffic detected; using known port {}",
+                                g.code, p
+                            );
+                        }
+                        Some(p)
+                    } else {
+                        // Unknown group with no traffic — ask the user
+                        println!(
+                            "  {} — could not detect port (no traffic in 3s).",
+                            g.code
+                        );
+                        let port_str = prompt_required(
+                            &format!("  Port for {}", g.code),
+                            "e.g. 7733",
+                        );
+                        port_str.parse::<u16>().ok()
+                    };
+
+                    dz_sources.push(SourceEntry {
+                        name: g.code.clone(),
+                        source_type: "shred".into(),
+                        multicast_addr: Some(g.multicast_ip.clone()),
+                        port,
+                        interface: Some(iface),
+                        url: None,
+                        x_token: None,
+                        pin_recv_core: None,
+                        pin_decode_core: None,
+                        shred_version: None,
+                    });
+                }
+
+                // Show active UDP sockets on detected shred ports
+                let known_ports: Vec<u16> = traffic_ports.values().copied().collect();
+                println!();
+                println!("=== Active UDP sockets on shred ports ===");
+                show_udp_sockets(&known_ports);
             }
         }
-        ports
-    } else {
-        HashMap::new()
-    };
-
-    // Show UDP sockets using all known/detected ports.
-    let known_ports: Vec<u16> = dz_groups
-        .values()
-        .filter_map(|(_, p)| *p)
-        .chain(traffic_ports.values().copied())
-        .collect();
-    println!();
-    println!("=== Active UDP sockets on shred ports ===");
-    show_udp_sockets(&known_ports);
-
-    // Build detected source list.
-    let detected = detect_sources(&dz_groups, &memberships, &traffic_ports);
+    }
 
     // -----------------------------------------------------------------------
-    // Step 1: offer to include auto-detected feeds
+    // Build the final source list
     // -----------------------------------------------------------------------
     let mut sources_to_write: Vec<SourceEntry> = Vec::new();
 
-    if !detected.is_empty() {
+    // Include auto-detected DZ feeds
+    if !dz_sources.is_empty() {
         println!();
-        println!("Detected {} active feed(s):", detected.len());
-        for s in &detected {
+        println!("DoubleZero feeds selected:");
+        for s in &dz_sources {
             println!(
                 "  {} — {} port {} on {}",
                 s.name,
                 s.multicast_addr.as_deref().unwrap_or("?"),
-                s.port.map(|p| p.to_string()).unwrap_or_else(|| "?".into()),
+                s.port
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "?".into()),
                 s.interface.as_deref().unwrap_or("?"),
             );
         }
-        // Warn about subscribed groups where port detection failed.
-        for (ip, _iface) in &memberships {
-            if let Some((code, None)) = dz_groups.get(ip) {
-                if !traffic_ports.contains_key(ip) {
-                    println!(
-                        "  ⚠  {} — could not detect port (no traffic in 3s). \
-                         Add it manually below.",
-                        code
-                    );
-                }
-            }
-        }
         println!();
         if prompt_yn(&format!(
-            "Include auto-detected sources in {}?",
+            "Include these DoubleZero feeds in {}?",
             config_path.display()
         )) {
-            // Auto-detect a baseline RPC if not already present.
-            let rpc_url = detect_rpc_url();
-            println!("  RPC baseline: {}", rpc_url);
-            sources_to_write.extend(detected);
-            sources_to_write.push(SourceEntry {
-                name: "rpc".into(),
-                source_type: "rpc".into(),
-                multicast_addr: None,
-                port: None,
-                interface: None,
-                url: Some(rpc_url),
-                x_token: None,
-                pin_recv_core: None,
-                pin_decode_core: None,
-            });
+            sources_to_write.extend(dz_sources);
         }
-    } else {
-        println!();
-        println!("No feeds auto-detected.");
-        println!("  Tip: doublezero connect multicast --subscribe <code>");
     }
 
     // -----------------------------------------------------------------------
-    // Step 2: let the user add any sources that weren't auto-detected
+    // Manual sources (non-DZ: geyser, jito-grpc, rpc, custom shred feeds)
     // -----------------------------------------------------------------------
     println!();
-    if prompt_yn("Are there any feed sources missing?") {
+    if prompt_yn("Are there any additional feed sources to add?") {
         let manual = collect_manual_sources();
         sources_to_write.extend(manual);
     }
 
     // -----------------------------------------------------------------------
-    // Step 3: write probe.toml if we have anything
+    // RPC baseline
     // -----------------------------------------------------------------------
     if !sources_to_write.is_empty() {
-        let cfg = ProbeConfig { sources: sources_to_write, filter_programs: Vec::new() };
+        // Check if an rpc/geyser baseline already exists in what we're writing.
+        let has_baseline = sources_to_write
+            .iter()
+            .any(|s| matches!(s.source_type.as_str(), "rpc" | "geyser" | "jito-grpc"));
+
+        if !has_baseline {
+            println!();
+            let rpc_url = detect_rpc_url();
+            println!("RPC baseline detected: {}", rpc_url);
+            if prompt_yn("Add RPC baseline source?") {
+                sources_to_write.push(SourceEntry {
+                    name: "rpc".into(),
+                    source_type: "rpc".into(),
+                    multicast_addr: None,
+                    port: None,
+                    interface: None,
+                    url: Some(rpc_url),
+                    x_token: None,
+                    pin_recv_core: None,
+                    pin_decode_core: None,
+                    shred_version: None,
+                });
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Write probe.toml
+    // -----------------------------------------------------------------------
+    if !sources_to_write.is_empty() {
+        let cfg = ProbeConfig {
+            sources: sources_to_write,
+            filter_programs: Vec::new(),
+        };
         let toml_str = toml::to_string_pretty(&cfg)?;
         std::fs::write(config_path, toml_str)?;
         println!();
         println!("Written to {}.", config_path.display());
+    } else {
+        println!();
+        println!("No sources selected — probe.toml not modified.");
     }
 
     Ok(())
@@ -153,62 +284,71 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
 // DoubleZero group metadata
 // ---------------------------------------------------------------------------
 
-/// Query `doublezero multicast group list --json`, print the table, and return
-/// a map of multicast_ip → (code, Option<port>).
-///
-/// The port is populated if the DoubleZero CLI JSON includes a port field;
-/// otherwise it is None and will be filled in by traffic sniffing.
-fn collect_and_show_dz_groups() -> HashMap<String, (String, Option<u16>)> {
-    let mut map = HashMap::new();
+struct DzGroup {
+    code: String,
+    multicast_ip: String,
+    publishers: u32,
+    subscribers: u32,
+    status: String,
+}
 
-    if let Ok(output) = Command::new("doublezero")
-        .args(["multicast", "group", "list", "--json"])
+/// Known shred data ports for well-known DoubleZero groups (from DoubleZero docs).
+/// Used as a fallback when traffic sniffing finds no packets within the timeout.
+fn known_port_for_group(code: &str) -> Option<u16> {
+    match code {
+        "bebop" => Some(7733),
+        "jito-shredstream" => Some(20001),
+        _ => None,
+    }
+}
+
+/// Run `doublezero multicast group list` (pipe-delimited table, no flags) and
+/// parse the result into a list of groups.
+///
+/// Returns `None` if the `doublezero` CLI is not found on PATH.
+/// Returns `Some([])` if the CLI ran but returned no groups.
+fn fetch_dz_groups() -> Option<Vec<DzGroup>> {
+    let output = Command::new("doublezero")
+        .args(["multicast", "group", "list"])
         .output()
-    {
-        if output.status.success() {
-            let json = String::from_utf8_lossy(&output.stdout);
-            if let Ok(groups) = serde_json::from_str::<serde_json::Value>(&json) {
-                if let Some(arr) = groups.as_array() {
-                    println!(
-                        "  {:<20} {:<16} {:>4} {:>4} {:<12} {}",
-                        "CODE", "MULTICAST IP", "PUB", "SUB", "BANDWIDTH", "STATUS"
-                    );
-                    println!("  {}", "-".repeat(72));
-                    for g in arr {
-                        let code = g["code"].as_str().unwrap_or("?");
-                        let ip = g["multicast_ip"].as_str().unwrap_or("?");
-                        let pub_ = g["publishers"].as_u64().unwrap_or(0);
-                        let sub = g["subscribers"].as_u64().unwrap_or(0);
-                        let bw = g["max_bandwidth"].as_str().unwrap_or("?");
-                        let status = g["status"].as_str().unwrap_or("?");
-                        // Try several candidate field names for the shred data port.
-                        let port: Option<u16> = g["port"]
-                            .as_u64()
-                            .or_else(|| g["shred_port"].as_u64())
-                            .or_else(|| g["data_port"].as_u64())
-                            .and_then(|p| u16::try_from(p).ok());
-                        println!(
-                            "  {:<20} {:<16} {:>4} {:>4} {:<12} {}",
-                            code, ip, pub_, sub, bw, status
-                        );
-                        if ip != "?" {
-                            map.insert(ip.to_string(), (code.to_string(), port));
-                        }
-                    }
-                } else {
-                    println!("{}", json.trim());
-                }
-            } else {
-                println!("{}", String::from_utf8_lossy(&output.stdout).trim());
-            }
-        } else {
-            println!("  doublezero CLI returned error");
-        }
-    } else {
-        println!("  doublezero CLI not found — install from https://doublezero.xyz");
+        .ok()?;
+
+    if !output.status.success() && output.stdout.is_empty() {
+        return None;
     }
 
-    map
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut groups = Vec::new();
+
+    for line in text.lines() {
+        // Table format:  account | code | multicast_ip | max_bandwidth | publishers | subscribers | status | owner
+        let fields: Vec<&str> = line.split('|').map(|f| f.trim()).collect();
+        if fields.len() < 7 {
+            continue;
+        }
+        // Skip the header row
+        if fields[1] == "code" || fields[0] == "account" {
+            continue;
+        }
+        let code = fields[1].to_string();
+        let multicast_ip = fields[2].to_string();
+        if code.is_empty() || multicast_ip.is_empty() {
+            continue;
+        }
+        let publishers: u32 = fields[4].parse().unwrap_or(0);
+        let subscribers: u32 = fields[5].parse().unwrap_or(0);
+        let status = fields[6].to_string();
+
+        groups.push(DzGroup {
+            code,
+            multicast_ip,
+            publishers,
+            subscribers,
+            status,
+        });
+    }
+
+    Some(groups)
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +378,9 @@ fn collect_and_show_memberships() -> HashMap<String, String> {
                         map.insert(addr.to_string(), current_iface.clone());
                     }
                 }
+            }
+            if map.is_empty() {
+                println!("  (no multicast memberships found)");
             }
         } else {
             println!("  (ip command not available)");
@@ -311,6 +454,9 @@ fn detect_shred_ports_from_traffic(
 ///
 /// Expected format: `HH:MM:SS.usec IP src.sport > dst.dport: UDP, length N`
 /// The dst token is `A.B.C.D.PORT:` — we rsplit on `.` to separate IP from port.
+///
+/// Port 5765 is the DoubleZero heartbeat (fires every ~10s, ~4-byte payload).
+/// It is filtered out here so it cannot shadow the real shred data port (7733).
 fn parse_dst_from_tcpdump_line(line: &str) -> Option<(String, u16)> {
     let gt = line.find(" > ")?;
     let after = &line[gt + 3..];
@@ -318,51 +464,16 @@ fn parse_dst_from_tcpdump_line(line: &str) -> Option<(String, u16)> {
     let dot = token.rfind('.')?;
     let ip = &token[..dot];
     let port: u16 = token[dot + 1..].parse().ok()?;
+    // Filter out the DoubleZero heartbeat port — not a shred data port.
+    if port == 5765 {
+        return None;
+    }
     // Sanity-check: destination should be a multicast address (224–239).
     let first_octet: u8 = ip.split('.').next()?.parse().ok()?;
     if !(224..=239).contains(&first_octet) {
         return None;
     }
     Some((ip.to_string(), port))
-}
-
-// ---------------------------------------------------------------------------
-// Source building
-// ---------------------------------------------------------------------------
-
-/// Cross-reference doublezero groups with local memberships to build a
-/// SourceEntry list for feeds that are actively subscribed on this machine.
-///
-/// Port priority: DoubleZero CLI JSON → traffic sniff → None (excluded with warning).
-fn detect_sources(
-    dz_groups: &HashMap<String, (String, Option<u16>)>,
-    memberships: &HashMap<String, String>,
-    traffic_ports: &HashMap<String, u16>,
-) -> Vec<SourceEntry> {
-    let mut sources: Vec<SourceEntry> = memberships
-        .iter()
-        .filter_map(|(ip, iface)| {
-            let (code, dz_port) = dz_groups.get(ip)?;
-            let port = dz_port
-                .or_else(|| traffic_ports.get(ip).copied());
-            // Exclude sources where port is unknown — would silently use wrong default.
-            let port = port?;
-            Some(SourceEntry {
-                name: code.clone(),
-                source_type: "shred".into(),
-                multicast_addr: Some(ip.clone()),
-                port: Some(port),
-                interface: Some(iface.clone()),
-                url: None,
-                x_token: None,
-                pin_recv_core: None,
-                pin_decode_core: None,
-            })
-        })
-        .collect();
-
-    sources.sort_by(|a, b| a.name.cmp(&b.name));
-    sources
 }
 
 // ---------------------------------------------------------------------------
@@ -499,16 +610,17 @@ fn detect_rpc_url() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Interactive source builder
+// Interactive source builder (non-DZ / manual sources)
 // ---------------------------------------------------------------------------
 
 /// Ask the user to describe one or more sources that weren't auto-detected.
+/// Handles all source types: shred (custom), rpc, geyser, jito-grpc.
 fn collect_manual_sources() -> Vec<SourceEntry> {
     let mut sources = Vec::new();
     loop {
         println!();
         println!("Source type:");
-        println!("  1) shred     — DoubleZero / Jito ShredStream UDP multicast");
+        println!("  1) shred     — UDP multicast shred feed (custom / non-DoubleZero)");
         println!("  2) rpc       — Solana JSON-RPC (local or remote)");
         println!("  3) geyser    — Yellowstone gRPC (Helius, Triton, QuickNode, …)");
         println!("  4) jito-grpc — Jito ShredStream gRPC proxy (local)");
@@ -521,14 +633,19 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
 
         let entry = match choice.as_str() {
             "1" | "shred" => {
-                let name = prompt_required("  Name", "e.g. bebop");
+                let name = prompt_required("  Name", "e.g. my-feed");
                 let multicast_addr = prompt_required("  Multicast IP", "e.g. 233.84.178.1");
-                let port_str = prompt_with_default("  Port", "20001", "e.g. 7733 for bebop, 20001 for jito");
+                let port_str =
+                    prompt_required("  Port", "e.g. 7733 for bebop, 20001 for jito");
                 let port: u16 = match port_str.parse() {
                     Ok(p) => p,
-                    Err(_) => { println!("  Invalid port — skipping source."); continue; }
+                    Err(_) => {
+                        println!("  Invalid port — skipping source.");
+                        continue;
+                    }
                 };
-                let interface = prompt_with_default("  Interface", "doublezero1", "network interface");
+                let interface =
+                    prompt_with_default("  Interface", "doublezero1", "network interface");
                 SourceEntry {
                     name,
                     source_type: "shred".into(),
@@ -539,6 +656,7 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
                     x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 }
             }
             "2" | "rpc" => {
@@ -554,11 +672,13 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
                     x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 }
             }
             "3" | "geyser" => {
                 let name = prompt_required("  Name", "e.g. helius");
-                let url = prompt_required("  URL", "e.g. https://mainnet.helius-rpc.com:443");
+                let url =
+                    prompt_required("  URL", "e.g. https://mainnet.helius-rpc.com:443");
                 let x_token = prompt_optional("  x-token", "auth token — press Enter to skip");
                 SourceEntry {
                     name,
@@ -570,11 +690,13 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
                     x_token,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 }
             }
             "4" | "jito-grpc" => {
                 let name = prompt_with_default("  Name", "jito-grpc", "display name");
-                let url = prompt_with_default("  URL", "http://127.0.0.1:9999", "proxy address");
+                let url =
+                    prompt_with_default("  URL", "http://127.0.0.1:9999", "proxy address");
                 SourceEntry {
                     name,
                     source_type: "jito-grpc".into(),
@@ -585,6 +707,7 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
                     x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 }
             }
             _ => {
@@ -638,7 +761,11 @@ fn prompt_with_default(label: &str, default: &str, hint: &str) -> String {
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok();
     let val = input.trim().to_string();
-    if val.is_empty() { default.to_string() } else { val }
+    if val.is_empty() {
+        default.to_string()
+    } else {
+        val
+    }
 }
 
 /// Prompt for an optional field — returns None if the user presses Enter.
@@ -648,5 +775,9 @@ fn prompt_optional(label: &str, hint: &str) -> Option<String> {
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok();
     let val = input.trim().to_string();
-    if val.is_empty() { None } else { Some(val) }
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
+    }
 }

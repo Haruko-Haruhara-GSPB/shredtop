@@ -253,6 +253,7 @@ pub fn build_source(
                 interface,
                 pin_recv_core: entry.pin_recv_core,
                 pin_decode_core: entry.pin_decode_core,
+                shred_version: entry.shred_version,
             })
         }
         "rpc" => {

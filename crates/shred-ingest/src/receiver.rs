@@ -1,20 +1,28 @@
 //! UDP multicast shred receiver.
 //!
 //! Binds to a UDP socket, joins the DoubleZero multicast group, and emits
-//! raw shred bytes with a nanosecond receive timestamp. Designed to run on
-//! a CPU-pinned, isolated core with `SO_BUSY_POLL` for minimum latency.
+//! raw shred bytes with a nanosecond receive timestamp.
+//!
+//! ## Hot-path design (Linux)
+//! * `SO_BUSY_POLL 50µs` — spin-waits for packets, eliminates scheduler wakeup latency
+//! * `SO_TIMESTAMPNS` — kernel captures receive timestamp at NIC driver level,
+//!   before any userspace scheduling jitter; more accurate than `clock_gettime` after `recv`
+//! * `recvmmsg(MSG_WAITFORONE, batch=64)` — returns as soon as ≥1 packet is available,
+//!   filling more if already queued; reduces syscall overhead at high packet rates
+//! * `SO_RCVBUFFORCE 32MB` — bypasses `net.core.rmem_max`; falls back to `SO_RCVBUF`
+//!   with a warning if not running as root
 
 use anyhow::Result;
 use crossbeam_channel::Sender;
 use socket2::{Domain, Protocol, Socket, Type};
-use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use crate::metrics;
 use crate::source_metrics::SourceMetrics;
 
-/// Raw shred bytes received from UDP multicast
+/// Raw shred bytes received from UDP multicast.
 pub struct RawShred {
     pub data: Vec<u8>,
     pub recv_timestamp_ns: u64,
@@ -23,9 +31,27 @@ pub struct RawShred {
 pub struct ShredReceiver {
     socket: Socket,
     tx: Sender<RawShred>,
-    buf: Vec<u8>,
     metrics: Arc<SourceMetrics>,
+    /// Optional shred version filter (bytes 77-78). Shreds with a different
+    /// version are silently dropped before they reach the decoder.
+    shred_version: Option<u16>,
 }
+
+// Standard Solana shred MTU — used by both Linux and fallback paths.
+const PKT_CAP: usize = 1500;
+
+// Linux hot-path constants.
+// Batch size for recvmmsg. 64 is a common sweet-spot: enough to amortise
+// syscall overhead without holding packets in kernel longer than necessary.
+#[cfg(target_os = "linux")]
+const BATCH: usize = 64;
+// cmsg buffer: cmsghdr (16B) + timespec (16B) + alignment padding = 64B is safe.
+#[cfg(target_os = "linux")]
+const CMSG_CAP: usize = 64;
+// MSG_WAITFORONE: return as soon as ≥1 message is available, fill more if queued.
+// Value 0x10000 from <linux/socket.h>; may not be exposed by the libc crate version.
+#[cfg(target_os = "linux")]
+const MSG_WAITFORONE: libc::c_int = 0x10000;
 
 impl ShredReceiver {
     /// Bind to the multicast group on the specified interface.
@@ -35,6 +61,7 @@ impl ShredReceiver {
         interface: &str,
         tx: Sender<RawShred>,
         metrics: Arc<SourceMetrics>,
+        shred_version: Option<u16>,
     ) -> Result<Self> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         socket.set_reuse_address(true)?;
@@ -45,92 +72,185 @@ impl ShredReceiver {
         // traffic and the other gets none. SO_REUSEADDR alone is sufficient here:
         // each socket binds to a distinct multicast address so they don't conflict.
 
-        // Parse multicast address first so we can bind to it directly.
-        // Binding to the multicast address (not UNSPECIFIED) ensures this socket
-        // only receives packets destined for this specific group, preventing
-        // cross-contamination when multiple sources share the same port.
         let mcast_addr: Ipv4Addr = multicast_addr.parse()?;
         let iface_addr = Self::resolve_interface_addr(interface)?;
         let bind_addr = SocketAddrV4::new(mcast_addr, port);
         socket.bind(&bind_addr.into())?;
-
         socket.join_multicast_v4(&mcast_addr, &iface_addr)?;
 
-        // Enable busy-poll for lower latency
         #[cfg(target_os = "linux")]
         {
+            use std::mem::size_of;
             use std::os::unix::io::AsRawFd;
+            let fd = socket.as_raw_fd();
             unsafe {
-                let val: libc::c_int = 50; // 50µs busy poll
-                libc::setsockopt(
-                    socket.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_BUSY_POLL,
-                    &val as *const _ as *const libc::c_void,
-                    std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-                );
+                // SO_BUSY_POLL: spin for up to 50µs before blocking.
+                let val: libc::c_int = 50;
+                libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_BUSY_POLL,
+                    &val as *const _ as _, size_of::<libc::c_int>() as _);
+
+                // SO_RCVBUFFORCE: bypasses net.core.rmem_max (requires root).
+                // Falls back to SO_RCVBUF with a warning if unprivileged.
+                const RECV_BUF: usize = 32 * 1024 * 1024;
+                let buf_val = RECV_BUF as libc::c_int;
+                let force_ok = libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_RCVBUFFORCE,
+                    &buf_val as *const _ as _, size_of::<libc::c_int>() as _) == 0;
+                if !force_ok {
+                    socket.set_recv_buffer_size(RECV_BUF).ok();
+                    if let Ok(actual) = socket.recv_buffer_size() {
+                        if actual < RECV_BUF / 2 {
+                            tracing::warn!(
+                                "recv buffer is {}KB (wanted {}KB); \
+                                 run as root or: sysctl -w net.core.rmem_max={}",
+                                actual / 1024, RECV_BUF / 1024, RECV_BUF * 2
+                            );
+                        }
+                    }
+                }
+
+                // SO_TIMESTAMPNS: kernel records the receive timestamp at NIC
+                // driver level, returned via SCM_TIMESTAMPNS cmsg on recvmsg/recvmmsg.
+                let one: libc::c_int = 1;
+                libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_TIMESTAMPNS,
+                    &one as *const _ as _, size_of::<libc::c_int>() as _);
             }
         }
 
-        // 4MB receive buffer
+        #[cfg(not(target_os = "linux"))]
         socket.set_recv_buffer_size(4 * 1024 * 1024)?;
 
-        Ok(Self {
-            socket,
-            tx,
-            buf: vec![0u8; 1500], // MTU-sized buffer
-            metrics,
-        })
+        Ok(Self { socket, tx, metrics, shred_version })
     }
 
-    /// Main receive loop — should run on a pinned, isolated core
+    /// Main receive loop — should run on a pinned, isolated core.
     pub fn run(&mut self) -> Result<()> {
         tracing::info!("shred receiver started");
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::io::AsRawFd;
+            let fd = self.socket.as_raw_fd();
+            self.run_linux(fd)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        self.run_fallback()
+    }
+
+    /// Linux hot path: recvmmsg with kernel timestamps.
+    #[cfg(target_os = "linux")]
+    fn run_linux(&mut self, fd: libc::c_int) -> Result<()> {
+        use std::ptr::null_mut;
+        // Pre-allocate batch buffers once; pointers into these are held by
+        // iovs/msgs for the lifetime of the loop.
+        let mut pkts = vec![[0u8; PKT_CAP]; BATCH];
+        let mut cmsgs = vec![[0u8; CMSG_CAP]; BATCH];
+        let mut iovs: Vec<libc::iovec> = pkts
+            .iter_mut()
+            .map(|b| libc::iovec { iov_base: b.as_mut_ptr() as _, iov_len: PKT_CAP })
+            .collect();
+        let mut msgs: Vec<libc::mmsghdr> = (0..BATCH)
+            .map(|i| libc::mmsghdr {
+                msg_hdr: libc::msghdr {
+                    msg_name: null_mut(),
+                    msg_namelen: 0,
+                    msg_iov: &mut iovs[i] as *mut _,
+                    msg_iovlen: 1,
+                    msg_control: cmsgs[i].as_mut_ptr() as _,
+                    msg_controllen: CMSG_CAP,
+                    msg_flags: 0,
+                },
+                msg_len: 0,
+            })
+            .collect();
+
         loop {
-            // SAFETY: we're reading into a pre-allocated buffer
-            let buf_uninit: &mut [MaybeUninit<u8>] = unsafe {
-                std::slice::from_raw_parts_mut(
-                    self.buf.as_mut_ptr() as *mut MaybeUninit<u8>,
-                    self.buf.len(),
-                )
+            // Reset fields that recvmmsg may have modified.
+            for (i, msg) in msgs.iter_mut().enumerate() {
+                msg.msg_hdr.msg_controllen = CMSG_CAP;
+                msg.msg_hdr.msg_iov = &mut iovs[i] as *mut _;
+                iovs[i].iov_len = PKT_CAP;
+            }
+
+            let n = unsafe {
+                libc::recvmmsg(fd, msgs.as_mut_ptr(), BATCH as _, MSG_WAITFORONE, null_mut())
             };
-            let n = self.socket.recv(buf_uninit)?;
+            if n <= 0 {
+                continue;
+            }
 
-            let ts = metrics::now_ns();
+            for i in 0..n as usize {
+                let len = msgs[i].msg_len as usize;
+                if len == 0 {
+                    continue;
+                }
 
-            if n > 0 {
-                self.metrics
-                    .shreds_received
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.metrics
-                    .bytes_received
-                    .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
-                let shred = RawShred {
-                    data: self.buf[..n].to_vec(),
+                // Shred version filter: bytes 77-78 (u16 LE) carry the fork ID.
+                if let Some(ver) = self.shred_version {
+                    if len >= 79 {
+                        let v = u16::from_le_bytes([pkts[i][77], pkts[i][78]]);
+                        if v != ver {
+                            continue;
+                        }
+                    }
+                }
+
+                // Prefer kernel timestamp; fall back to userspace clock.
+                let ts = kernel_ts(&msgs[i].msg_hdr).unwrap_or_else(metrics::now_ns);
+
+                self.metrics.shreds_received.fetch_add(1, Relaxed);
+                self.metrics.bytes_received.fetch_add(len as u64, Relaxed);
+
+                if self.tx.try_send(RawShred {
+                    data: pkts[i][..len].to_vec(),
                     recv_timestamp_ns: ts,
-                };
-                // Non-blocking send — drop if the decoder channel is full (backpressure).
-                // Dropped shreds mean the decoder is falling behind; visible via shreds_dropped.
-                if self.tx.try_send(shred).is_err() {
-                    self.metrics
-                        .shreds_dropped
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }).is_err() {
+                    self.metrics.shreds_dropped.fetch_add(1, Relaxed);
                 }
             }
         }
     }
 
-    /// Resolve a network interface name to its IPv4 address
+    /// Non-Linux fallback: single recv per loop iteration.
+    #[cfg(not(target_os = "linux"))]
+    fn run_fallback(&mut self) -> Result<()> {
+        let mut buf = vec![0u8; PKT_CAP];
+        loop {
+            let buf_uninit: &mut [std::mem::MaybeUninit<u8>] = unsafe {
+                std::slice::from_raw_parts_mut(buf.as_mut_ptr() as _, buf.len())
+            };
+            let n = self.socket.recv(buf_uninit)?;
+            let ts = metrics::now_ns();
+            if n == 0 { continue; }
+
+            if let Some(ver) = self.shred_version {
+                if n >= 79 {
+                    let v = u16::from_le_bytes([buf[77], buf[78]]);
+                    if v != ver { continue; }
+                }
+            }
+
+            self.metrics.shreds_received.fetch_add(1, Relaxed);
+            self.metrics.bytes_received.fetch_add(n as u64, Relaxed);
+            if self.tx.try_send(RawShred {
+                data: buf[..n].to_vec(),
+                recv_timestamp_ns: ts,
+            }).is_err() {
+                self.metrics.shreds_dropped.fetch_add(1, Relaxed);
+            }
+        }
+    }
+
     fn resolve_interface_addr(interface: &str) -> Result<Ipv4Addr> {
         #[cfg(target_os = "linux")]
         {
             use std::ffi::CStr;
+            use std::ptr::null_mut;
             unsafe {
-                let mut addrs: *mut libc::ifaddrs = std::ptr::null_mut();
+                let mut addrs: *mut libc::ifaddrs = null_mut();
                 if libc::getifaddrs(&mut addrs) != 0 {
                     anyhow::bail!("getifaddrs failed");
                 }
-
                 let mut current = addrs;
                 while !current.is_null() {
                     let ifa = &*current;
@@ -139,8 +259,8 @@ impl ShredReceiver {
                         if name == interface
                             && (*ifa.ifa_addr).sa_family == libc::AF_INET as libc::sa_family_t
                         {
-                            let sockaddr_in = &*(ifa.ifa_addr as *const libc::sockaddr_in);
-                            let ip = Ipv4Addr::from(u32::from_be(sockaddr_in.sin_addr.s_addr));
+                            let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                            let ip = Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
                             libc::freeifaddrs(addrs);
                             return Ok(ip);
                         }
@@ -158,4 +278,28 @@ impl ShredReceiver {
             Ok(Ipv4Addr::LOCALHOST)
         }
     }
+}
+
+/// Extract the kernel receive timestamp from a recvmmsg control message.
+///
+/// SO_TIMESTAMPNS makes the kernel deliver a `struct timespec` in a
+/// `SCM_TIMESTAMPNS` cmsg (cmsg_type == SO_TIMESTAMPNS == 35 on Linux).
+/// Returns `None` if the cmsg is absent (e.g. SO_TIMESTAMPNS not set).
+#[cfg(target_os = "linux")]
+fn kernel_ts(hdr: &libc::msghdr) -> Option<u64> {
+    // SAFETY: hdr.msg_control points to our pre-allocated cmsg buffer;
+    // CMSG_* macros walk the buffer using the controllen field.
+    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(hdr) };
+    while !cmsg.is_null() {
+        let c = unsafe { &*cmsg };
+        // SCM_TIMESTAMPNS == SO_TIMESTAMPNS == 35 on all Linux arches.
+        if c.cmsg_level == libc::SOL_SOCKET && c.cmsg_type == libc::SO_TIMESTAMPNS {
+            let ts: libc::timespec = unsafe {
+                std::ptr::read_unaligned(libc::CMSG_DATA(cmsg) as *const libc::timespec)
+            };
+            return Some(ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64);
+        }
+        cmsg = unsafe { libc::CMSG_NXTHDR(hdr, cmsg) };
+    }
+    None
 }

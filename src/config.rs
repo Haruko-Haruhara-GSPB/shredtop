@@ -39,6 +39,10 @@ pub struct SourceEntry {
     pub pin_recv_core: Option<usize>,
     /// CPU core to pin decoder thread to (optional)
     pub pin_decode_core: Option<usize>,
+    /// Only accept shreds with this version (bytes 77-78). Silently drops mismatches.
+    /// Useful during forks or network upgrades. Omit to accept all versions.
+    #[serde(default)]
+    pub shred_version: Option<u16>,
 }
 
 impl ProbeConfig {
@@ -65,6 +69,7 @@ impl ProbeConfig {
                     x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 },
                 SourceEntry {
                     name: "jito-shredstream".into(),
@@ -76,6 +81,7 @@ impl ProbeConfig {
                     x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 },
                 SourceEntry {
                     name: "rpc".into(),
@@ -87,6 +93,7 @@ impl ProbeConfig {
                     x_token: None,
                     pin_recv_core: None,
                     pin_decode_core: None,
+                    shred_version: None,
                 },
             ],
         }

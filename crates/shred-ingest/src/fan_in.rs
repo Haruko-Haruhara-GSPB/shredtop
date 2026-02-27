@@ -54,6 +54,7 @@ pub struct ShredTxSource {
     pub interface: String,
     pub pin_recv_core: Option<usize>,
     pub pin_decode_core: Option<usize>,
+    pub shred_version: Option<u16>,
 }
 
 impl TxSource for ShredTxSource {
@@ -75,6 +76,7 @@ impl TxSource for ShredTxSource {
         let multicast_addr = self.multicast_addr.clone();
         let port = self.port;
         let interface = self.interface.clone();
+        let shred_version = self.shred_version;
         let recv_metrics = metrics.clone();
         let pin_recv = self.pin_recv_core;
         let name = self.name;
@@ -91,6 +93,7 @@ impl TxSource for ShredTxSource {
                     &interface,
                     shred_tx,
                     recv_metrics,
+                    shred_version,
                 )
                 .expect("failed to create shred receiver");
                 receiver.run().expect("shred receiver crashed");

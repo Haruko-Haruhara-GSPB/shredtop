@@ -16,6 +16,7 @@ pub enum SourceConfig {
         multicast_addr: String,
         port: u16,
         interface: String,
+        shred_version: Option<u16>,
     },
     /// RPC block polling (highest latency, always available)
     Rpc { url: String },
@@ -29,7 +30,7 @@ pub fn start_source(
     metrics: Arc<SourceMetrics>,
 ) -> Result<std::thread::JoinHandle<()>> {
     match config {
-        SourceConfig::Shred { multicast_addr, port, interface } => {
+        SourceConfig::Shred { multicast_addr, port, interface, shred_version } => {
             let (shred_tx, shred_rx) = crossbeam_channel::bounded(4096);
 
             let recv_metrics = metrics.clone();
@@ -45,6 +46,7 @@ pub fn start_source(
                         &interface,
                         shred_tx,
                         recv_metrics,
+                        shred_version,
                     )
                     .expect("failed to create shred receiver");
                     receiver.run().expect("shred receiver crashed");
