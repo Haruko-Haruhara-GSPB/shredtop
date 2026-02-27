@@ -74,6 +74,11 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
         .unwrap_or_default()
         .as_secs();
 
+    // Truncate the log at startup so the monitor immediately reflects this run.
+    if let Ok(f) = std::fs::File::create(&log_path) {
+        drop(f);
+    }
+
     let interval = Duration::from_secs(interval_secs);
     let mut prev: Vec<SourceMetricsSnapshot> = all_metrics.iter().map(|m| m.snapshot()).collect();
     let mut prev_time = Instant::now();
