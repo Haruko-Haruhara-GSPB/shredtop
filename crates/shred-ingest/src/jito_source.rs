@@ -81,6 +81,7 @@ impl TxSource for JitoShredstreamSource {
         self: Box<Self>,
         tx: Sender<DecodedTx>,
         metrics: Arc<SourceMetrics>,
+        _race: Option<Arc<crate::shred_race::ShredRaceTracker>>,
     ) -> Vec<JoinHandle<()>> {
         let name = self.name;
         let url = self.url.clone();

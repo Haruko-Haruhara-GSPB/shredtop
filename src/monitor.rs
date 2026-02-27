@@ -236,11 +236,73 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
             .into(),
     );
 
+    // Shred race section
+    out.push(String::new());
+    out.push("SHRED RACE  (since service start):".into());
+    if let Some(pairs) = entry["shred_race"].as_array() {
+        if pairs.is_empty() {
+            out.push(
+                "  No shred-level races recorded yet — feeds may relay different slots.".into(),
+            );
+        } else {
+            out.push(format!(
+                "  {:<35}  {:>9}  {:>8}  {:>8}  {:>10}  {:>9}  {:>9}",
+                "PAIR", "MATCHED", "A-WINS", "B-WINS", "LEAD avg", "LEAD p50", "LEAD p95",
+            ));
+            for p in pairs {
+                let sa = p["source_a"].as_str().unwrap_or("?");
+                let sb = p["source_b"].as_str().unwrap_or("?");
+                let pair_str = format!("{} vs {}", sa, sb);
+                let matched = p["total_matched"].as_u64().unwrap_or(0);
+                let a_pct = p["a_win_pct"].as_f64().unwrap_or(0.0);
+                let b_pct = 100.0 - a_pct;
+                let avg_str = p["lead_mean_us"]
+                    .as_f64()
+                    .map(|v| format!("+{:.2}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                let p50_str = p["lead_p50_us"]
+                    .as_f64()
+                    .map(|v| format!("+{:.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                let p95_str = p["lead_p95_us"]
+                    .as_f64()
+                    .map(|v| format!("+{:.1}ms", v / 1000.0))
+                    .unwrap_or_else(|| "—".into());
+                out.push(format!(
+                    "  {:<35}  {:>9}  {:>7.1}%  {:>7.1}%  {:>10}  {:>9}  {:>9}",
+                    pair_str,
+                    format_num(matched),
+                    a_pct,
+                    b_pct,
+                    avg_str,
+                    p50_str,
+                    p95_str,
+                ));
+            }
+        }
+    } else {
+        out.push(
+            "  No shred-level races recorded yet — feeds may relay different slots.".into(),
+        );
+    }
+
     let count = out.len();
     for line in out {
         println!("{}", line);
     }
     count
+}
+
+fn format_num(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out.chars().rev().collect()
 }
 
 // ---------------------------------------------------------------------------

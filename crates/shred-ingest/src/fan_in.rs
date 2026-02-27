@@ -19,6 +19,7 @@ use std::thread::JoinHandle;
 
 use crate::decoder::DecodedTx;
 use crate::metrics;
+use crate::shred_race::ShredRaceTracker;
 use crate::source_metrics::SourceMetrics;
 
 // ---------------------------------------------------------------------------
@@ -34,10 +35,13 @@ pub trait TxSource: Send + 'static {
     }
     /// Start all threads for this source. The source writes decoded transactions to
     /// `tx` and increments `metrics` counters as it operates.
+    /// `race` is `Some` only for shred-tier sources; other sources should accept and
+    /// ignore it (parameter named `_race`).
     fn start(
         self: Box<Self>,
         tx: Sender<DecodedTx>,
         metrics: Arc<SourceMetrics>,
+        race: Option<Arc<ShredRaceTracker>>,
     ) -> Vec<JoinHandle<()>>;
 }
 
@@ -70,6 +74,7 @@ impl TxSource for ShredTxSource {
         self: Box<Self>,
         tx: Sender<DecodedTx>,
         metrics: Arc<SourceMetrics>,
+        race: Option<Arc<ShredRaceTracker>>,
     ) -> Vec<JoinHandle<()>> {
         let (shred_tx, shred_rx) = crossbeam_channel::bounded(4096);
 
@@ -80,6 +85,7 @@ impl TxSource for ShredTxSource {
         let recv_metrics = metrics.clone();
         let pin_recv = self.pin_recv_core;
         let name = self.name;
+        let race_tx = race.as_ref().map(|r| r.sender());
 
         let recv_handle = std::thread::Builder::new()
             .name(format!("{}-recv", name))
@@ -94,6 +100,7 @@ impl TxSource for ShredTxSource {
                     shred_tx,
                     recv_metrics,
                     shred_version,
+                    race_tx,
                 )
                 .expect("failed to create shred receiver");
                 receiver.run().expect("shred receiver crashed");
@@ -139,6 +146,7 @@ impl TxSource for RpcTxSource {
         self: Box<Self>,
         tx: Sender<DecodedTx>,
         metrics: Arc<SourceMetrics>,
+        _race: Option<Arc<ShredRaceTracker>>,
     ) -> Vec<JoinHandle<()>> {
         let url = self.url.clone();
         let pin_core = self.pin_core;
@@ -192,14 +200,17 @@ impl FanInSource {
         self.sources.push((source, metrics));
     }
 
-    /// Start all sources and return their metrics handles + all thread handles.
+    /// Start all sources and return their metrics handles, the shred race tracker,
+    /// and all thread handles.
     pub fn start(
         self,
         out_tx: Sender<DecodedTx>,
-    ) -> (Vec<Arc<SourceMetrics>>, Vec<JoinHandle<()>>) {
+    ) -> (Vec<Arc<SourceMetrics>>, Arc<ShredRaceTracker>, Vec<JoinHandle<()>>) {
         let dedup: Arc<DashMap<[u8; 64], FirstArrival>> = Arc::new(DashMap::new());
         let mut all_handles: Vec<JoinHandle<()>> = Vec::new();
         let mut all_metrics: Vec<Arc<SourceMetrics>> = Vec::new();
+
+        let race_tracker = ShredRaceTracker::new();
 
         // Parse filter programs once at start time; shared across relay threads.
         let filter_set: Arc<HashSet<Pubkey>> = Arc::new(
@@ -214,7 +225,9 @@ impl FanInSource {
             let source_is_rpc = source.is_rpc();
             let (inner_tx, inner_rx) = crossbeam_channel::bounded::<DecodedTx>(4096);
 
-            let source_handles = source.start(inner_tx, source_metrics.clone());
+            // Pass the race tracker to shred-tier sources; None for RPC-tier.
+            let race_arg = if !source_is_rpc { Some(race_tracker.clone()) } else { None };
+            let source_handles = source.start(inner_tx, source_metrics.clone(), race_arg);
             all_handles.extend(source_handles);
             all_metrics.push(source_metrics.clone());
 
@@ -311,7 +324,7 @@ impl FanInSource {
             .expect("failed to spawn evict thread");
         all_handles.push(evict_handle);
 
-        (all_metrics, all_handles)
+        (all_metrics, race_tracker, all_handles)
     }
 }
 

@@ -76,7 +76,6 @@ impl RpcSource {
     }
 
     fn process_slot(&self, slot: u64) -> Result<usize> {
-        let recv_ts = metrics::now_ns();
         self.metrics.slots_attempted.fetch_add(1, Relaxed);
 
         let block = self.rpc.get_block_with_config(
@@ -89,6 +88,7 @@ impl RpcSource {
                 max_supported_transaction_version: Some(0),
             },
         )?;
+        let recv_ts = metrics::now_ns();
 
         let mut count = 0;
 

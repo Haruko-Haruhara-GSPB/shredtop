@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use serde::Serialize;
-use shred_ingest::{DecodedTx, FanInSource, SourceMetricsSnapshot};
+use shred_ingest::{DecodedTx, FanInSource, ShredPairSnapshot, SourceMetricsSnapshot};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -23,6 +23,7 @@ struct LogEntry<'a> {
     ts: u64,
     started_at: u64,
     sources: Vec<SourceSnap<'a>>,
+    shred_race: Vec<ShredPairSnapshot>,
 }
 
 #[derive(Serialize)]
@@ -67,7 +68,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
     }
 
     let (out_tx, out_rx) = crossbeam_channel::bounded::<DecodedTx>(4096);
-    let (all_metrics, _handles) = fan_in.start(out_tx);
+    let (all_metrics, race_tracker, _handles) = fan_in.start(out_tx);
 
     std::thread::spawn(move || {
         for _ in out_rx {}
@@ -108,6 +109,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
                 .zip(prev.iter())
                 .map(|(c, p)| make_snap(c, p, elapsed))
                 .collect(),
+            shred_race: race_tracker.snapshots(),
         };
 
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {

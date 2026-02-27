@@ -20,6 +20,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use crate::metrics;
+use crate::shred_race::ShredArrival;
 use crate::source_metrics::SourceMetrics;
 
 /// Raw shred bytes received from UDP multicast.
@@ -40,6 +41,9 @@ pub struct ShredReceiver {
     /// CLOCK_MONOTONIC_RAW reference frame used by the rest of the pipeline.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     rt_to_mono_offset_ns: u64,
+    /// Optional channel to the shred race tracker. Each received shred's
+    /// (slot, shred_index) is forwarded here for cross-feed comparison.
+    race_tx: Option<Sender<ShredArrival>>,
 }
 
 // Standard Solana shred MTU — used by both Linux and fallback paths.
@@ -67,6 +71,7 @@ impl ShredReceiver {
         tx: Sender<RawShred>,
         metrics: Arc<SourceMetrics>,
         shred_version: Option<u16>,
+        race_tx: Option<Sender<ShredArrival>>,
     ) -> Result<Self> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         socket.set_reuse_address(true)?;
@@ -126,7 +131,7 @@ impl ShredReceiver {
 
         let rt_to_mono_offset_ns = sample_rt_to_mono_offset_ns();
 
-        Ok(Self { socket, tx, metrics, shred_version, rt_to_mono_offset_ns })
+        Ok(Self { socket, tx, metrics, shred_version, rt_to_mono_offset_ns, race_tx })
     }
 
     /// Main receive loop — should run on a pinned, isolated core.
@@ -208,6 +213,21 @@ impl ShredReceiver {
                     .map(|rt| rt.saturating_sub(self.rt_to_mono_offset_ns))
                     .unwrap_or_else(metrics::now_ns);
 
+                // Shred race: parse (slot, shred_index) from the shred header.
+                // Layout: bytes 65–72 = slot (u64 LE), 73–76 = shred_index (u32 LE).
+                if len >= 77 {
+                    if let Some(ref rtx) = self.race_tx {
+                        let slot = u64::from_le_bytes(pkts[i][65..73].try_into().unwrap());
+                        let idx = u32::from_le_bytes(pkts[i][73..77].try_into().unwrap());
+                        let _ = rtx.try_send(ShredArrival {
+                            source: self.metrics.name,
+                            slot,
+                            idx,
+                            recv_ns: ts,
+                        });
+                    }
+                }
+
                 self.metrics.shreds_received.fetch_add(1, Relaxed);
                 self.metrics.bytes_received.fetch_add(len as u64, Relaxed);
 
@@ -237,6 +257,20 @@ impl ShredReceiver {
                 if n >= 79 {
                     let v = u16::from_le_bytes([buf[77], buf[78]]);
                     if v != ver { continue; }
+                }
+            }
+
+            // Shred race: parse (slot, shred_index) from the shred header.
+            if n >= 77 {
+                if let Some(ref rtx) = self.race_tx {
+                    let slot = u64::from_le_bytes(buf[65..73].try_into().unwrap());
+                    let idx = u32::from_le_bytes(buf[73..77].try_into().unwrap());
+                    let _ = rtx.try_send(ShredArrival {
+                        source: self.metrics.name,
+                        slot,
+                        idx,
+                        recv_ns: ts,
+                    });
                 }
             }
 

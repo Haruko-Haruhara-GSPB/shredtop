@@ -68,7 +68,7 @@ pub fn run(config: &ProbeConfig, duration_secs: u64, output: Option<PathBuf>) ->
     }
 
     let (out_tx, out_rx) = crossbeam_channel::bounded::<DecodedTx>(4096);
-    let (all_metrics, _handles) = fan_in.start(out_tx);
+    let (all_metrics, _race_tracker, _handles) = fan_in.start(out_tx);
 
     // Drain thread
     std::thread::spawn(move || {
