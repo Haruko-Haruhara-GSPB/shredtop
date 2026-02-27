@@ -38,7 +38,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
     match fetch_dz_groups() {
         None => {
             println!("  doublezero CLI not found.");
-            println!("  Install: https://docs.malbeclabs.com/setup/");
+            println!("  Install the doublezero CLI to auto-detect groups.");
             println!("  (DoubleZero feeds can be added manually in the next step)");
         }
         Some(groups) if groups.is_empty() => {

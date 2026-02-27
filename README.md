@@ -293,10 +293,10 @@ shredder upgrade --source  # pull main and rebuild from source
 
 | Code | Multicast IP | Port | Description |
 |------|-------------|------|-------------|
-| `bebop` | `233.84.178.1` | `7733` | Malbec Labs relay |
+| `bebop` | `233.84.178.1` | `7733` | DoubleZero relay |
 | `jito-shredstream` | `233.84.178.2` | `20001` | Jito relay |
 
-To subscribe to a multicast group over DoubleZero refer to the [DoubleZero documentation](https://docs.malbeclabs.com/Multicast%20Connection/).
+To subscribe to a multicast group over DoubleZero refer to the DoubleZero documentation.
 
 ---
 
