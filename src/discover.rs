@@ -240,23 +240,21 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             .any(|s| matches!(s.source_type.as_str(), "rpc" | "geyser" | "jito-grpc"));
 
         if !has_baseline {
-            println!();
             let rpc_url = detect_rpc_url();
-            println!("RPC baseline detected: {}", rpc_url);
-            if prompt_yn("Add RPC baseline source?") {
-                sources_to_write.push(SourceEntry {
-                    name: "rpc".into(),
-                    source_type: "rpc".into(),
-                    multicast_addr: None,
-                    port: None,
-                    interface: None,
-                    url: Some(rpc_url),
-                    x_token: None,
-                    pin_recv_core: None,
-                    pin_decode_core: None,
-                    shred_version: None,
-                });
-            }
+            println!();
+            println!("RPC baseline: {} (added automatically)", rpc_url);
+            sources_to_write.push(SourceEntry {
+                name: "rpc".into(),
+                source_type: "rpc".into(),
+                multicast_addr: None,
+                port: None,
+                interface: None,
+                url: Some(rpc_url),
+                x_token: None,
+                pin_recv_core: None,
+                pin_decode_core: None,
+                shred_version: None,
+            });
         }
     }
 
