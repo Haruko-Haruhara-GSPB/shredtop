@@ -60,37 +60,30 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-/// Checkout the latest release tag and rebuild from source.
+/// Fetch latest main and rebuild from source.
+/// Builds whatever is on main regardless of whether CI has published a release yet.
 pub fn run_from_source() -> Result<()> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
     let repo = std::path::PathBuf::from(&home).join("shred-probe");
     let repo_str = repo.to_str().unwrap();
 
-    print!("Latest:   ");
-    std::io::stdout().flush()?;
-    let tag = fetch_latest_release()
-        .ok_or_else(|| anyhow::anyhow!("could not reach GitHub to fetch latest release tag"))?;
-    println!("{}", tag);
-
     if repo.exists() {
-        println!("Fetching {}...", tag);
+        println!("Fetching latest main...");
         let ok = Command::new("git")
-            .args(["-C", repo_str, "fetch", "--tags", "origin"])
+            .args(["-C", repo_str, "fetch", "origin"])
             .status()?
             .success();
         anyhow::ensure!(ok, "git fetch failed");
-        // Hard-reset to the exact release tag — ensures a clean tree regardless
-        // of any local modifications or drift from previous builds.
+        // Hard-reset to origin/main — clean tree, no local drift.
         let ok = Command::new("git")
-            .args(["-C", repo_str, "reset", "--hard", &format!("refs/tags/{}", tag)])
+            .args(["-C", repo_str, "reset", "--hard", "origin/main"])
             .status()?
             .success();
-        anyhow::ensure!(ok, "git reset to tag failed");
+        anyhow::ensure!(ok, "git reset failed");
     } else {
         println!("Cloning to {}...", repo_str);
         let ok = Command::new("git")
-            .args(["clone", "--branch", &tag,
-                   "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git", repo_str])
+            .args(["clone", "https://github.com/Haruko-Haruhara-GSPB/shred-probe.git", repo_str])
             .status()?
             .success();
         anyhow::ensure!(ok, "git clone failed");
@@ -120,7 +113,7 @@ pub fn run_from_source() -> Result<()> {
 
     std::fs::rename(&tmp, &dest)?;
 
-    println!("Done. Built from source ({}) installed to {}.", tag, dest.display());
+    println!("Done. Built from source (main) installed to {}.", dest.display());
     Ok(())
 }
 
