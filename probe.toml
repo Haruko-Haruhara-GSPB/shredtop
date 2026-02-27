@@ -1,6 +1,6 @@
 # shredder configuration
 
-# DoubleZero bebop feed (Malbec Labs relay)
+# DoubleZero bebop feed
 [[sources]]
 name = "bebop"
 type = "shred"
