@@ -99,10 +99,30 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
         .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| "—".into());
 
+    let started_at = entry["started_at"].as_u64().unwrap_or(0) as i64;
+    let (started_str, uptime_str) = if started_at > 0 {
+        let s = Utc
+            .timestamp_opt(started_at, 0)
+            .single()
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| "—".into());
+        let secs = (ts - started_at).max(0) as u64;
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        let s2 = secs % 60;
+        let u = if h > 0 { format!("{}h {}m {}s", h, m, s2) }
+                 else if m > 0 { format!("{}m {}s", m, s2) }
+                 else { format!("{}s", s2) };
+        (s, u)
+    } else {
+        ("—".into(), "—".into())
+    };
+
     // Header
     out.push("=".repeat(W));
     out.push(format!("{:^W$}", format!("  SHREDDER FEED QUALITY  {}  ", time_str)));
     out.push("=".repeat(W));
+    out.push(format!("  Started: {}   Uptime: {}", started_str, uptime_str));
     out.push(String::new());
 
     // Column headers

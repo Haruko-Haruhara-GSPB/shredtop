@@ -21,6 +21,7 @@ pub const DEFAULT_LOG: &str = "/var/log/shredder.jsonl";
 #[derive(Serialize)]
 struct LogEntry<'a> {
     ts: u64,
+    started_at: u64,
     sources: Vec<SourceSnap<'a>>,
 }
 
@@ -68,6 +69,11 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
         for _ in out_rx {}
     });
 
+    let started_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
     let interval = Duration::from_secs(interval_secs);
     let mut prev: Vec<SourceMetricsSnapshot> = all_metrics.iter().map(|m| m.snapshot()).collect();
     let mut prev_time = Instant::now();
@@ -87,6 +93,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
 
         let entry = LogEntry {
             ts,
+            started_at,
             sources: curr
                 .iter()
                 .zip(prev.iter())
