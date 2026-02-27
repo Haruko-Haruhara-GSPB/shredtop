@@ -140,7 +140,7 @@ pub fn run() -> Result<()> {
     println!();
 
     // Shred-level race section
-    println!("SHRED RACE  (shred-level, since start):");
+    println!("SHRED RACE  validator \u{2192} this machine  (since start):");
     let race_pairs = entry["shred_race"].as_array();
     let has_race = race_pairs.map(|p| !p.is_empty()).unwrap_or(false);
     if !has_race {
@@ -149,31 +149,29 @@ pub fn run() -> Result<()> {
         );
     } else {
         println!(
-            "  {:<52}  {:>9}  {:>10}  {:>9}  {:>9}",
-            "WINNER (WIN%)  vs  LOSER (WIN%)", "RACES", "LEAD avg", "LEAD p50", "LEAD p95",
+            "  {:<22}  {:>7}  {:>9}  {:>10}  {:>9}  {:>9}",
+            "CONTENDER", "WIN%", "RACES", "FASTER BY", "LEAD p50", "LEAD p95",
         );
-        let mut pairs: Vec<&serde_json::Value> =
-            race_pairs.unwrap().iter().collect();
+        let mut pairs: Vec<&serde_json::Value> = race_pairs.unwrap().iter().collect();
         pairs.sort_by(|a, b| {
             let ma = a["total_matched"].as_u64().unwrap_or(0);
             let mb = b["total_matched"].as_u64().unwrap_or(0);
             mb.cmp(&ma)
         });
-        for p in pairs {
+        for (i, p) in pairs.iter().enumerate() {
+            if i > 0 {
+                println!("  \u{00b7}\u{00b7}\u{00b7}\u{00b7}\u{00b7}");
+            }
             let sa = p["source_a"].as_str().unwrap_or("?");
             let sb = p["source_b"].as_str().unwrap_or("?");
             let matched = p["total_matched"].as_u64().unwrap_or(0);
             let a_pct = p["a_win_pct"].as_f64().unwrap_or(0.0);
             let b_pct = 100.0 - a_pct;
-            let (winner, w_pct, loser, l_pct) = if a_pct >= b_pct {
+            let (faster, f_pct, slower, s_pct) = if a_pct >= b_pct {
                 (sa, a_pct, sb, b_pct)
             } else {
                 (sb, b_pct, sa, a_pct)
             };
-            let pair_str = format!(
-                "{} ({:.1}%)  vs  {} ({:.1}%)",
-                winner, w_pct, loser, l_pct
-            );
             let avg_str = p["lead_mean_us"]
                 .as_f64()
                 .map(|v| format!("+{:.2}ms", v / 1000.0))
@@ -187,15 +185,25 @@ pub fn run() -> Result<()> {
                 .map(|v| format!("+{:.1}ms", v / 1000.0))
                 .unwrap_or_else(|| "—".into());
             println!(
-                "  {:<52}  {:>9}  {:>10}  {:>9}  {:>9}",
-                pair_str,
-                format_num(matched),
-                avg_str,
-                p50_str,
-                p95_str,
+                "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
+                faster, f_pct, format_num(matched), avg_str, p50_str, p95_str,
+            );
+            println!(
+                "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
+                slower, s_pct, "—", "—", "—", "—",
             );
         }
     }
+    println!();
+    println!(
+        "  Matched on (slot, shred_index) \u{2014} when the same shred arrives on both feeds, records"
+    );
+    println!(
+        "  which relay delivered it first and by how much. Timing uses the kernel UDP receive"
+    );
+    println!(
+        "  timestamp (SO_TIMESTAMPNS), before any userspace processing."
+    );
     println!();
     println!("Log: {}  (shredder service status for service health)", DEFAULT_LOG);
 
