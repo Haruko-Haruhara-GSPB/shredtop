@@ -41,6 +41,63 @@ Lead time = `T_rpc_confirmed − T_shred_received`. Positive means you were ahea
 
 All timestamps use `CLOCK_MONOTONIC_RAW` (Linux) — immune to NTP slew.
 
+```mermaid
+flowchart LR
+    subgraph Feeds["Shred Feeds"]
+        DZ["DoubleZero UDP\nMulticast"]
+        JITO_UDP["Jito ShredStream\nUDP Multicast"]
+    end
+
+    subgraph Baseline["Baseline Sources"]
+        RPC["Solana RPC\nJSON-RPC polling"]
+        GEY["Yellowstone Geyser\ngRPC"]
+        JGRPC["Jito gRPC Proxy"]
+    end
+
+    subgraph HotPath["Hot Path (per shred feed)"]
+        RECV["ShredReceiver\nrecvmmsg · SO_TIMESTAMPNS"]
+        DEC["ShredDecoder\nFEC recovery · bincode"]
+    end
+
+    subgraph CaptureSide["Capture Side-Channel"]
+        CAP["Capture Thread\ntry_send · never blocks"]
+        RING["Ring Buffer\npcap / csv / jsonl"]
+    end
+
+    subgraph Agg["Matching & Aggregation"]
+        RACE["ShredRaceTracker\nslot + idx pairs\nfeed-vs-feed lead time"]
+        FANIN["FanInSource\nsignatures[0] dedup\nshred-vs-baseline lead time"]
+        METRICS["SourceMetrics\nper-source counters"]
+    end
+
+    LOG["/var/log/shredder.jsonl\nMetrics Log"]
+
+    subgraph CLI["CLI"]
+        MON["shredder monitor\nlive dashboard"]
+        STAT["shredder status\nsnapshot"]
+        BENCH["shredder bench\nJSON report"]
+        CLIST["shredder capture list\nring inventory"]
+        ANA["shredder analyze\ntiming table"]
+    end
+
+    DZ & JITO_UDP --> RECV
+    RECV -->|raw shreds| DEC
+    RECV -->|"ShredArrival\n(slot, idx, recv_ns)"| RACE
+    RECV -->|"CaptureEvent\ntry_send"| CAP
+    CAP --> RING
+
+    DEC -->|DecodedTx| FANIN
+    DEC --> METRICS
+    RPC & GEY & JGRPC -->|DecodedTx| FANIN
+    FANIN --> METRICS
+
+    RACE -->|ShredPairSnapshot| LOG
+    METRICS -->|snapshots| LOG
+
+    LOG --> MON & STAT & BENCH
+    RING --> CLIST & ANA
+```
+
 ---
 
 ## Requirements
