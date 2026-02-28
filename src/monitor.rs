@@ -22,23 +22,47 @@ extern "C" fn handle_sigint(_: libc::c_int) {
     RUNNING.store(false, Ordering::SeqCst);
 }
 
+fn log_has_data() -> bool {
+    std::fs::metadata(DEFAULT_LOG)
+        .map(|m| m.len() > 0)
+        .unwrap_or(false)
+}
+
 pub fn run(interval_secs: u64) -> Result<()> {
-    // Check that the log file exists and has data before entering the loop
-    match std::fs::metadata(DEFAULT_LOG) {
-        Err(_) => {
-            eprintln!("No metrics data found at {}.", DEFAULT_LOG);
-            eprintln!();
-            eprintln!("Start the background service first:");
-            eprintln!("  shredder service start");
-            eprintln!();
-            eprintln!("Then run `shredder monitor` again.");
-            return Ok(());
+    // If the log file doesn't exist at all, the service isn't installed.
+    if std::fs::metadata(DEFAULT_LOG).is_err() {
+        eprintln!("No metrics log found at {}.", DEFAULT_LOG);
+        eprintln!();
+        eprintln!("Start the background service first:");
+        eprintln!("  shredder service start");
+        eprintln!();
+        eprintln!("Then run `shredder monitor` again.");
+        return Ok(());
+    }
+
+    // Log exists but is empty — service just started. Poll up to 30s.
+    if !log_has_data() {
+        println!(
+            "{}",
+            color::yellow("Service recently started — monitor will appear in under 30s...")
+        );
+        let mut waited = 0u32;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            waited += 5;
+            if log_has_data() {
+                // Clear the waiting message before launching dashboard
+                print!("\x1b[1A\x1b[2K");
+                break;
+            }
+            if waited >= 30 {
+                println!(
+                    "{}",
+                    color::yellow("Service is taking longer than expected. Check: shredder service status")
+                );
+                return Ok(());
+            }
         }
-        Ok(m) if m.len() == 0 => {
-            eprintln!("Service is starting — no data yet. Try again in a few seconds.");
-            return Ok(());
-        }
-        Ok(_) => {}
     }
 
     RUNNING.store(true, Ordering::SeqCst);
