@@ -94,8 +94,11 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             };
 
             print!(
-                "Select groups to include [{}] (comma-separated numbers, or Enter for default): ",
-                default_str
+                "{}",
+                color::yellow(&format!(
+                    "Select groups to include [{}] (comma-separated numbers, or Enter for default): ",
+                    default_str
+                ))
             );
             io::stdout().flush().ok();
             let mut input = String::new();
@@ -251,16 +254,16 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
 
     if !has_baseline_already {
         println!();
-        println!("No baseline source configured.");
+        println!("{}", color::bold_cyan("=== No baseline source configured ==="));
         println!("A baseline (rpc/geyser) enables BEAT%/LEAD metrics — comparison of shred feeds");
         println!("vs block confirmation. Without one, SHRED RACE (inter-feed comparison) is still");
         println!("fully active.");
         println!();
-        println!("Add a baseline?");
+        println!("{}", color::bold_cyan("=== Add a baseline? ==="));
         println!("  1) Auto-detect local RPC  (tries ports 8899, 58000, 8900, 9000, 8080)");
         println!("  2) Enter URL manually");
         println!("  3) Skip — shred race only");
-        print!("Choice [1-3]: ");
+        print!("{}", color::yellow("Choice [1-3]: "));
         io::stdout().flush().ok();
 
         let mut input = String::new();
@@ -721,7 +724,7 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
         println!("  2) rpc       — Solana JSON-RPC (local or remote)");
         println!("  3) geyser    — Yellowstone gRPC (Helius, Triton, QuickNode, …)");
         println!("  4) jito-grpc — Jito ShredStream gRPC proxy (local)");
-        print!("Type [1-4]: ");
+        print!("{}", color::yellow("Type [1-4]: "));
         io::stdout().flush().ok();
 
         let mut input = String::new();
@@ -829,7 +832,7 @@ fn collect_manual_sources() -> Vec<SourceEntry> {
 // ---------------------------------------------------------------------------
 
 fn prompt_yn(question: &str) -> bool {
-    print!("{} [y/N] ", question);
+    print!("{}", color::yellow(&format!("{} [y/N] ", question)));
     io::stdout().flush().ok();
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok();
@@ -839,7 +842,7 @@ fn prompt_yn(question: &str) -> bool {
 /// Prompt for a required field — re-asks until the user enters something.
 fn prompt_required(label: &str, hint: &str) -> String {
     loop {
-        print!("{} ({}): ", label, hint);
+        print!("{}", color::yellow(&format!("{} ({}): ", label, hint)));
         io::stdout().flush().ok();
         let mut input = String::new();
         io::stdin().read_line(&mut input).ok();
@@ -853,7 +856,7 @@ fn prompt_required(label: &str, hint: &str) -> String {
 
 /// Prompt for a field with a default value shown in brackets.
 fn prompt_with_default(label: &str, default: &str, hint: &str) -> String {
-    print!("{} [{}] ({}): ", label, default, hint);
+    print!("{}", color::yellow(&format!("{} [{}] ({}): ", label, default, hint)));
     io::stdout().flush().ok();
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok();
@@ -867,7 +870,7 @@ fn prompt_with_default(label: &str, default: &str, hint: &str) -> String {
 
 /// Prompt for an optional field — returns None if the user presses Enter.
 fn prompt_optional(label: &str, hint: &str) -> Option<String> {
-    print!("{} ({}): ", label, hint);
+    print!("{}", color::yellow(&format!("{} ({}): ", label, hint)));
     io::stdout().flush().ok();
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok();
@@ -990,14 +993,15 @@ fn parse_size_mb(s: &str) -> Option<u64> {
 /// Returns `None` if the user skips capture.
 fn configure_capture() -> Option<CaptureConfig> {
     println!();
-    println!("Raw shred capture (optional — stores packets for offline analysis):");
+    println!("{}", color::bold_cyan("=== Raw shred capture (optional) ==="));
+    println!("  Stores raw packets to disk for offline analysis and replay.");
     println!();
     println!("  Select one or more formats (comma-separated, e.g. 1,3):");
     println!("  1) pcap   — Wireshark-compatible, industry standard");
     println!("  2) csv    — spreadsheet / pandas-friendly");
     println!("  3) jsonl  — structured JSON lines");
     println!("  4) Skip   — no capture");
-    print!("Formats [1/2/3/4, default=4]: ");
+    print!("{}", color::yellow("Formats [1/2/3/4, default=4]: "));
     io::stdout().flush().ok();
 
     let mut input = String::new();
@@ -1022,15 +1026,15 @@ fn configure_capture() -> Option<CaptureConfig> {
 
     // ── Step 2: choose a disk ────────────────────────────────────────────────
     println!();
-    println!("  Choose a disk to write capture files to:");
+    println!("{}", color::bold_cyan("=== Choose a disk for capture files ==="));
     println!();
 
     let disks = list_disks();
     if disks.is_empty() {
         println!("  (could not detect disks — enter path manually)");
     } else {
-        println!("  {:<4}  {:<30}  {:>6}  {:>6}  {}", "#", "MOUNT POINT", "SIZE", "AVAIL", "USE%");
-        println!("  {}", "-".repeat(60));
+        println!("  {}", color::bold(&format!("{:<4}  {:<30}  {:>6}  {:>6}  {}", "#", "MOUNT POINT", "SIZE", "AVAIL", "USE%")));
+        println!("  {}", color::dim(&"-".repeat(60)));
         for (i, d) in disks.iter().enumerate() {
             println!("  {:<4}  {:<30}  {:>6}  {:>6}  {}", i + 1, d.mount, d.size, d.avail, d.use_pct);
         }
@@ -1040,7 +1044,7 @@ fn configure_capture() -> Option<CaptureConfig> {
     let output_dir = if disks.is_empty() {
         prompt_with_default("Output directory", "/var/log/shredder-capture", "full path")
     } else {
-        print!("Disk [1-{}, or enter path]: ", disks.len());
+        print!("{}", color::yellow(&format!("Disk [1-{}, or enter path]: ", disks.len())));
         io::stdout().flush().ok();
         let mut sel = String::new();
         io::stdin().read_line(&mut sel).ok();
@@ -1063,7 +1067,7 @@ fn configure_capture() -> Option<CaptureConfig> {
 
     // ── Step 3: max size per format ──────────────────────────────────────────
     println!();
-    println!("  Set the maximum disk space each format may use.");
+    println!("{}", color::bold_cyan("=== Max disk space per format ==="));
     println!("  Use G for gigabytes, M for megabytes (e.g. 10G, 500M).");
     println!();
 
@@ -1078,7 +1082,7 @@ fn configure_capture() -> Option<CaptureConfig> {
             _       => "10G",
         };
         loop {
-            print!("  Max size for {} [default={}]: ", fmt, default_size);
+            print!("{}", color::yellow(&format!("  Max size for {} [default={}]: ", fmt, default_size)));
             io::stdout().flush().ok();
             let mut s = String::new();
             io::stdin().read_line(&mut s).ok();
