@@ -1072,14 +1072,17 @@ fn configure_capture() -> Option<CaptureConfig> {
     let mut max_size_mb: Vec<u64> = Vec::new();
 
     for fmt in &formats {
-        let default_size = match fmt.as_str() {
-            "pcap"  => "50G",
-            "csv"   => "5G",
-            "jsonl" => "5G",
-            _       => "10G",
+        let (default_size, approx_time) = match fmt.as_str() {
+            "pcap"  => ("50G",  "~2.5hrs of recording"),
+            "csv"   => ("5G",   "~2.5hrs of recording"),
+            "jsonl" => ("10G",  "~2.5hrs of recording"),
+            _       => ("10G",  "~2.5hrs of recording"),
         };
         loop {
-            print!("{}", color::yellow(&format!("  Max size for {} [default={}]: ", fmt, default_size)));
+            print!("{}", color::yellow(&format!(
+                "  Set max size for {} collection [suggested {} for {}]: ",
+                fmt, default_size, approx_time
+            )));
             io::stdout().flush().ok();
             let mut s = String::new();
             io::stdin().read_line(&mut s).ok();
