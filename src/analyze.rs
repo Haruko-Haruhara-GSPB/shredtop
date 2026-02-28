@@ -1,9 +1,9 @@
-//! `shredder analyze` — per-feed shred timing analysis from a pcap file.
+//! `shredtop analyze` — per-feed shred timing analysis from a pcap file.
 //!
-//! Reads any pcap written by `shredder capture` (or any third-party capture
+//! Reads any pcap written by `shredtop capture` (or any third-party capture
 //! of the same UDP multicast traffic), pairs shreds that arrived on multiple
 //! feeds, and prints a timing table identical in format to the live SHRED RACE
-//! output shown by `shredder monitor`.
+//! output shown by `shredtop monitor`.
 
 use anyhow::Result;
 use pcap_file::pcap::PcapReader;

@@ -1,12 +1,12 @@
-# shredder
+# shredtop
 
 Measures the latency advantage of raw Solana shred feeds over confirmed-block RPC.
 
-If your business depends on seeing transactions before your competitors, shredder gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
+If your business depends on seeing transactions before your competitors, shredtop gives you an estimate of how many milliseconds ahead you are, and whether that edge is holding.
 
 ```
 ====================================================================================================
-                      SHREDDER FEED QUALITY  2026-02-25 23:27:33 UTC
+                      SHREDTOP FEED QUALITY  2026-02-25 23:27:33 UTC
 ====================================================================================================
 
 SOURCE               SHREDS/s   COV%  TXS/s   BEAT%   LEAD avg   LEAD p50   LEAD p95   LEAD p99
@@ -29,7 +29,7 @@ COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  LEAD
 
 Solana leaders distribute blocks as shreds over UDP. Feed providers relay those shreds to your machine before the block is confirmed.
 
-shredder:
+shredtop:
 
 1. Binds a UDP socket on your multicast interface and receives raw shreds
 2. Parses the Agave wire format, runs Reed-Solomon FEC recovery on partial FEC sets
@@ -70,14 +70,14 @@ flowchart LR
         METRICS["SourceMetrics\nper-source counters"]
     end
 
-    LOG["/var/log/shredder.jsonl\nMetrics Log"]
+    LOG["/var/log/shredtop.jsonl\nMetrics Log"]
 
     subgraph CLI["CLI"]
-        MON["shredder monitor\nlive dashboard"]
-        STAT["shredder status\nsnapshot"]
-        BENCH["shredder bench\nJSON report"]
-        CLIST["shredder capture list\nring inventory"]
-        ANA["shredder analyze\ntiming table"]
+        MON["shredtop monitor\nlive dashboard"]
+        STAT["shredtop status\nsnapshot"]
+        BENCH["shredtop bench\nJSON report"]
+        CLIST["shredtop capture list\nring inventory"]
+        ANA["shredtop analyze\ntiming table"]
     end
 
     DZ & JITO_UDP --> RECV
@@ -114,19 +114,19 @@ flowchart LR
 **RECOMENDED Build from source (requires Rust 1.81+):**
 
 ```bash
-git clone https://github.com/Haruko-Haruhara-GSPB/shred-probe.git ~/shred-probe
-cargo install --path ~/shred-probe
+git clone https://github.com/Haruko-Haruhara-GSPB/shredtop.git ~/shredtop
+cargo install --path ~/shredtop
 ```
 
 # to upgrade from source
 ```
-shredder upgrade --source
+shredtop upgrade --source
 ```
 
 **Pre-built binary (recommended):**
 
 ```bash
-curl -fsSL https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/latest/download/shredder -o /usr/local/bin/shredder && chmod +x /usr/local/bin/shredder
+curl -fsSL https://github.com/Haruko-Haruhara-GSPB/shredtop/releases/latest/download/shredtop -o /usr/local/bin/shredtop && chmod +x /usr/local/bin/shredtop
 ```
 
 
@@ -137,19 +137,19 @@ curl -fsSL https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/latest/d
 
 ```bash
 # 1. Detect active feeds and write probe.toml
-shredder discover
+shredtop discover
 
 # 2. Start background collection (installs systemd service, persists across reboots)
-shredder service start
+shredtop service start
 
 # 3. Open the live dashboard — Ctrl-C closes the view, collection keeps running
-shredder monitor
+shredtop monitor
 
 # Check metrics any time without opening the dashboard
-shredder status
+shredtop status
 
 # Upgrade to the latest version
-shredder upgrade --source
+shredtop upgrade --source
 ```
 
 ---
@@ -233,23 +233,23 @@ When `filter_programs` is empty (the default), all transactions are measured.
 
 ## Commands
 
-### `shredder service start`
+### `shredtop service start`
 
 Installs the systemd unit file, enables it on boot, and starts the service. If the service is already running, shows current status instead. Run once after install.
 
 ```bash
-shredder service start    # start (installs and enables automatically)
-shredder service stop     # stop
-shredder service restart  # restart
-shredder service status   # show systemd status
-shredder service uninstall  # remove unit file and disable
+shredtop service start    # start (installs and enables automatically)
+shredtop service stop     # stop
+shredtop service restart  # restart
+shredtop service status   # show systemd status
+shredtop service uninstall  # remove unit file and disable
 ```
 
-### `shredder monitor [--interval N]`
+### `shredtop monitor [--interval N]`
 
 Live dashboard reading from the service metrics log. Refreshes every `N` seconds (default 5). Ctrl-C closes the view — the background service keeps running.
 
-Requires `shredder service start` to be running first.
+Requires `shredtop service start` to be running first.
 
 | Column | Meaning |
 |--------|---------|
@@ -262,17 +262,17 @@ Requires `shredder service start` to be running first.
 | `LEAD p95` | 95th percentile — good worst-case lead time |
 | `LEAD p99` | 99th percentile — true worst-case lead time |
 
-### `shredder status`
+### `shredtop status`
 
 One-shot snapshot from the metrics log. Non-interactive — works from any terminal or script.
 
-### `shredder discover`
+### `shredtop discover`
 
 Auto-detects DoubleZero multicast feeds and local RPC nodes. Shows group availability, active multicast memberships, and configured sources from `probe.toml`. Sniffs live traffic to identify the correct UDP port for each feed automatically. Offers to write detected sources to `probe.toml`.
 
 Internet-based sources (Helius, Triton, QuickNode Geyser, Jito gRPC proxy) cannot be auto-detected and must be configured manually in `probe.toml` — see the source type table above.
 
-### `shredder bench --duration N [--output FILE]`
+### `shredtop bench --duration N [--output FILE]`
 
 Runs a timed benchmark for `N` seconds and writes a JSON report. If `--output` is omitted, prints to stdout.
 
@@ -319,24 +319,24 @@ Runs a timed benchmark for `N` seconds and writes a JSON report. If `--output` i
 | `txs_decoded` | Transactions decoded from this slot |
 | `outcome` | `complete` / `partial` / `dropped` |
 
-### `shredder init`
+### `shredtop init`
 
 Prints a default `probe.toml` to stdout.
 
-### `shredder upgrade`
+### `shredtop upgrade`
 
 Downloads and installs the latest release binary.
 
 ```bash
-shredder upgrade           # download latest release
-shredder upgrade --source  # pull main and rebuild from source
+shredtop upgrade           # download latest release
+shredtop upgrade --source  # pull main and rebuild from source
 ```
 
 ---
 
 ## Understanding the numbers
 
-**Coverage %** — Some feed providers relay only the tail FEC sets of each block, not the full block. 80–90% coverage is normal and expected. shredder handles mid-stream joins correctly (no waiting for shred index 0).
+**Coverage %** — Some feed providers relay only the tail FEC sets of each block, not the full block. 80–90% coverage is normal and expected. shredtop handles mid-stream joins correctly (no waiting for shred index 0).
 
 **Win rate %** — how often this source delivers a transaction before all other sources. With two shred feeds and one RPC, a healthy setup shows the faster shred source winning 55–65% of transactions.
 
@@ -360,12 +360,12 @@ To subscribe to a multicast group over DoubleZero refer to the DoubleZero docume
 ## Uninstall
 
 ```bash
-shredder service uninstall                    # stop, disable, remove unit file
-cargo uninstall shredder                      # remove binary (if installed via cargo)
-rm /usr/local/bin/shredder                    # remove binary (if installed via curl)
-rm -f /var/log/shredder.jsonl                 # remove metrics log
-rm -rf /var/log/shredder-capture              # remove capture files (if capture was enabled)
-rm -rf ~/shred-probe probe.toml               # remove source and config
+shredtop service uninstall                    # stop, disable, remove unit file
+cargo uninstall shredtop                      # remove binary (if installed via cargo)
+rm /usr/local/bin/shredtop                    # remove binary (if installed via curl)
+rm -f /var/log/shredtop.jsonl                 # remove metrics log
+rm -rf /var/log/shredtop-capture              # remove capture files (if capture was enabled)
+rm -rf ~/shredtop probe.toml               # remove source and config
 ```
 
 ---

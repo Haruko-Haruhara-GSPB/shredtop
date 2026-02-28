@@ -1,13 +1,13 @@
-//! CLI definitions for shredder.
+//! CLI definitions for shredtop.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[clap(
-    name = "shredder",
+    name = "shredtop",
     version,
-    about = "Solana shred feed latency benchmark\n\nMeasures how many milliseconds ahead of confirmed RPC your DoubleZero or Jito ShredStream feed delivers transactions.\n\nQuick start:\n  shredder discover          # detect feeds, write probe.toml\n  shredder service start     # start background collection\n  shredder monitor           # open live dashboard",
+    about = "Solana shred feed latency benchmark\n\nMeasures how many milliseconds ahead of confirmed RPC your DoubleZero or Jito ShredStream feed delivers transactions.\n\nQuick start:\n  shredtop discover          # detect feeds, write probe.toml\n  shredtop service start     # start background collection\n  shredtop monitor           # open live dashboard",
     long_about = None
 )]
 pub struct Cli {
@@ -36,7 +36,7 @@ pub enum Commands {
 
     /// Live dashboard showing feed quality (Ctrl-C closes view, service keeps running)
     ///
-    /// Read-only view of the metrics written by `shredder service start`.
+    /// Read-only view of the metrics written by `shredtop service start`.
     /// Requires the service to be running first.
     Monitor {
         /// Dashboard refresh interval in seconds
@@ -61,7 +61,7 @@ pub enum Commands {
     /// Print an example probe.toml to stdout
     Init,
 
-    /// Upgrade shredder to the latest release binary
+    /// Upgrade shredtop to the latest release binary
     Upgrade {
         /// Pull main branch and rebuild from source instead of downloading a release
         #[clap(long)]
@@ -76,12 +76,12 @@ pub enum Commands {
 
     /// Analyze a pcap capture file for per-feed shred timing
     ///
-    /// Reads any pcap written by `shredder capture` (or any third-party capture
+    /// Reads any pcap written by `shredtop capture` (or any third-party capture
     /// of the same UDP multicast traffic), pairs shreds that arrived on multiple
     /// feeds, and prints a timing table showing win rates and lead times.
     ///
     /// Example:
-    ///   shredder analyze capture.pcap \
+    ///   shredtop analyze capture.pcap \
     ///     --feed 233.84.178.1=bebop \
     ///     --feed 233.84.178.2=jito-shredstream
     Analyze {

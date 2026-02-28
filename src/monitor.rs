@@ -1,7 +1,7 @@
-//! `shredder monitor` — live dashboard reading from the service metrics log.
+//! `shredtop monitor` — live dashboard reading from the service metrics log.
 //!
-//! This command is a read-only view. It reads `/var/log/shredder.jsonl` written
-//! by `shredder run` / `shredder service start` and redraws the dashboard every
+//! This command is a read-only view. It reads `/var/log/shredtop.jsonl` written
+//! by `shredtop run` / `shredtop service start` and redraws the dashboard every
 //! N seconds. Ctrl-C closes the view; the background service keeps running.
 
 use anyhow::Result;
@@ -34,9 +34,9 @@ pub fn run(interval_secs: u64) -> Result<()> {
         eprintln!("No metrics log found at {}.", DEFAULT_LOG);
         eprintln!();
         eprintln!("Start the background service first:");
-        eprintln!("  shredder service start");
+        eprintln!("  shredtop service start");
         eprintln!();
-        eprintln!("Then run `shredder monitor` again.");
+        eprintln!("Then run `shredtop monitor` again.");
         return Ok(());
     }
 
@@ -58,7 +58,7 @@ pub fn run(interval_secs: u64) -> Result<()> {
             if waited >= 30 {
                 println!(
                     "{}",
-                    color::yellow("Service is taking longer than expected. Check: shredder service status")
+                    color::yellow("Service is taking longer than expected. Check: shredtop service status")
                 );
                 return Ok(());
             }
@@ -70,7 +70,7 @@ pub fn run(interval_secs: u64) -> Result<()> {
 
     println!(
         "{}",
-        color::bold("SHREDDER MONITOR  —  Ctrl-C to close  (service keeps running)")
+        color::bold("SHREDTOP MONITOR  —  Ctrl-C to close  (service keeps running)")
     );
     println!();
 
@@ -104,7 +104,7 @@ pub fn run(interval_secs: u64) -> Result<()> {
 
     println!();
     println!("View closed.  Service is still running in the background.");
-    println!("  shredder status  — check metrics any time");
+    println!("  shredtop status  — check metrics any time");
 
     Ok(())
 }
@@ -148,7 +148,7 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
     // Header
     out.push(color::bold(&"=".repeat(W)));
-    out.push(color::bold_cyan(&format!("{:^W$}", format!("  SHREDDER FEED QUALITY  {}  ", time_str))));
+    out.push(color::bold_cyan(&format!("{:^W$}", format!("  SHREDTOP FEED QUALITY  {}  ", time_str))));
     out.push(color::bold(&"=".repeat(W)));
     out.push(color::dim(&format!("  Started: {}   Uptime: {}", started_str, uptime_str)));
     out.push(String::new());
@@ -355,7 +355,7 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     if edge_lines.is_empty() {
         if !has_rpc {
             out.push(color::yellow(
-                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one.",
+                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredtop discover` to add one.",
             ));
         } else {
             out.push(color::dim(

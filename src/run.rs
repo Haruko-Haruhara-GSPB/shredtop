@@ -1,9 +1,9 @@
-//! `shredder run` — background data collection daemon.
+//! `shredtop run` — background data collection daemon.
 //!
 //! Runs the full shred pipeline with no TUI and writes per-source metrics
 //! snapshots to a JSONL log file every N seconds. Designed to run under
-//! systemd or in a tmux session. Use `shredder status` to query the log,
-//! or `shredder service install` to manage via systemd.
+//! systemd or in a tmux session. Use `shredtop status` to query the log,
+//! or `shredtop service install` to manage via systemd.
 
 use anyhow::Result;
 use serde::Serialize;
@@ -17,7 +17,7 @@ use crate::capture;
 use crate::config::ProbeConfig;
 use crate::monitor::build_source;
 
-pub const DEFAULT_LOG: &str = "/var/log/shredder.jsonl";
+pub const DEFAULT_LOG: &str = "/var/log/shredtop.jsonl";
 
 #[derive(Serialize)]
 struct LogEntry<'a> {
@@ -50,16 +50,16 @@ struct SourceSnap<'a> {
 
 pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Result<()> {
     if config.sources.is_empty() {
-        anyhow::bail!("no sources configured — run `shredder discover` first");
+        anyhow::bail!("no sources configured — run `shredtop discover` first");
     }
 
     eprintln!(
-        "shredder run — {} source(s), logging to {} every {}s",
+        "shredtop run — {} source(s), logging to {} every {}s",
         config.sources.len(),
         log_path.display(),
         interval_secs
     );
-    eprintln!("Run `shredder status` to check current metrics.");
+    eprintln!("Run `shredtop status` to check current metrics.");
 
     // Spin up the capture thread if [capture] is configured and enabled.
     let cap_tx: Option<crossbeam_channel::Sender<CaptureEvent>> =
@@ -76,7 +76,7 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
                 })
                 .collect();
             eprintln!(
-                "shredder capture — {} → {}  ({} MB rotate)",
+                "shredtop capture — {} → {}  ({} MB rotate)",
                 sizes.join(", "),
                 cap_cfg.output_dir,
                 cap_cfg.rotate_mb,

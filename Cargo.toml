@@ -59,7 +59,7 @@ pcap-file = "2"
 # ─── Binary crate ────────────────────────────────────────────────────────────
 
 [package]
-name = "shredder"
+name = "shredtop"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -67,7 +67,7 @@ description = "Solana shred feed latency benchmark — measure your edge before 
 license = "MIT"
 
 [[bin]]
-name = "shredder"
+name = "shredtop"
 path = "src/main.rs"
 
 [dependencies]

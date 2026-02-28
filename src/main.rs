@@ -1,7 +1,7 @@
-//! shredder — Solana shred feed latency benchmark.
+//! shredtop — Solana shred feed latency benchmark.
 //!
 //! Measures the latency advantage of DoubleZero / Jito ShredStream raw shred
-//! feeds over confirmed-block RPC polling. Run `shredder --help` for usage.
+//! feeds over confirmed-block RPC polling. Run `shredtop --help` for usage.
 
 use anyhow::Result;
 use clap::Parser;
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
                 eprintln!(
-                    "Created '{}' — run `shredder discover` to populate it.",
+                    "Created '{}' — run `shredtop discover` to populate it.",
                     cli.config.display()
                 );
             }

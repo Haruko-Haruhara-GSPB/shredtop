@@ -1,4 +1,4 @@
-//! `shredder capture list` — display the on-disk capture ring.
+//! `shredtop capture list` — display the on-disk capture ring.
 
 use anyhow::Result;
 use chrono::{TimeZone, Utc};
@@ -13,7 +13,7 @@ pub fn run(config_path: &Path) -> Result<()> {
     let config = ProbeConfig::load(config_path)?;
     let cap = config.capture.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
-            "no [capture] section in probe.toml — run `shredder discover` to configure capture"
+            "no [capture] section in probe.toml — run `shredtop discover` to configure capture"
         )
     })?;
 
@@ -25,7 +25,7 @@ pub fn run(config_path: &Path) -> Result<()> {
     let output_dir = Path::new(&cap.output_dir);
     if !output_dir.exists() {
         println!("Capture directory {} does not exist yet.", output_dir.display());
-        println!("Start the service to begin capture: shredder service start");
+        println!("Start the service to begin capture: shredtop service start");
         return Ok(());
     }
 
@@ -43,7 +43,7 @@ pub fn run(config_path: &Path) -> Result<()> {
 
     if files.is_empty() {
         println!("No capture files in {}.", output_dir.display());
-        println!("Start the service and wait a moment: shredder service start");
+        println!("Start the service and wait a moment: shredtop service start");
         return Ok(());
     }
 

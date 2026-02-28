@@ -1,4 +1,4 @@
-//! `shredder upgrade` — download the latest release binary from GitHub.
+//! `shredtop upgrade` — download the latest release binary from GitHub.
 
 use anyhow::Result;
 use std::io::{self, Write};
@@ -9,7 +9,7 @@ use crate::color;
 const RELEASES_API: &str =
     "https://api.github.com/repos/Haruko-Haruhara-GSPB/shred-probe/releases/latest";
 const DOWNLOAD_URL: &str =
-    "https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/download/{tag}/shredder";
+    "https://github.com/Haruko-Haruhara-GSPB/shred-probe/releases/download/{tag}/shredtop";
 
 pub fn run() -> Result<()> {
     let current = env!("CARGO_PKG_VERSION");
@@ -35,7 +35,7 @@ pub fn run() -> Result<()> {
     println!("{}", color::cyan(&format!("Upgrading to {}...", tag)));
 
     let url = DOWNLOAD_URL.replace("{tag}", &tag);
-    let dest = which_shredder()?;
+    let dest = which_shredtop()?;
     let tmp = dest.with_extension("tmp");
 
     let ok = Command::new("curl")
@@ -105,8 +105,8 @@ pub fn run_from_source() -> Result<()> {
     anyhow::ensure!(ok, "cargo build failed");
 
     // Copy to a temp file then rename — avoids ETXTBSY on the running binary
-    let built = repo.join("target/release/shredder");
-    let dest = which_shredder()?;
+    let built = repo.join("target/release/shredtop");
+    let dest = which_shredtop()?;
     let tmp = dest.with_extension("tmp");
     std::fs::copy(&built, &tmp)?;
 
@@ -124,18 +124,18 @@ pub fn run_from_source() -> Result<()> {
     Ok(())
 }
 
-/// Locate the installed shredder binary via `which`.
-fn which_shredder() -> Result<std::path::PathBuf> {
-    let out = Command::new("which").arg("shredder").output()?;
+/// Locate the installed shredtop binary via `which`.
+fn which_shredtop() -> Result<std::path::PathBuf> {
+    let out = Command::new("which").arg("shredtop").output()?;
     let path = std::str::from_utf8(&out.stdout)?.trim().to_string();
-    anyhow::ensure!(!path.is_empty(), "could not locate installed shredder binary");
+    anyhow::ensure!(!path.is_empty(), "could not locate installed shredtop binary");
     Ok(std::path::PathBuf::from(path))
 }
 
 /// Query the GitHub releases API and return the tag name of the latest release.
 fn fetch_latest_release() -> Option<String> {
     let output = Command::new("curl")
-        .args(["-sf", "--max-time", "10", "-H", "User-Agent: shredder", RELEASES_API])
+        .args(["-sf", "--max-time", "10", "-H", "User-Agent: shredtop", RELEASES_API])
         .output()
         .ok()?;
 

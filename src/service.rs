@@ -1,18 +1,18 @@
-//! `shredder service` — systemd integration.
+//! `shredtop service` — systemd integration.
 //!
-//! Installs and manages a systemd unit that runs `shredder run` in the
-//! background, logging metrics to /var/log/shredder.jsonl.
+//! Installs and manages a systemd unit that runs `shredtop run` in the
+//! background, logging metrics to /var/log/shredtop.jsonl.
 
 use anyhow::Result;
 use std::process::Command;
 
 use crate::color;
 
-const UNIT_PATH: &str = "/etc/systemd/system/shredder.service";
+const UNIT_PATH: &str = "/etc/systemd/system/shredtop.service";
 
 pub fn install(config_path: &std::path::Path) -> Result<()> {
     let already_active = Command::new("systemctl")
-        .args(["is-active", "--quiet", "shredder"])
+        .args(["is-active", "--quiet", "shredtop"])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
@@ -20,9 +20,9 @@ pub fn install(config_path: &std::path::Path) -> Result<()> {
     if already_active {
         println!("{}", color::green("Service is already running."));
         println!();
-        println!("  shredder service stop     — stop the service");
-        println!("  shredder service restart  — restart the service");
-        println!("  shredder monitor          — open live dashboard");
+        println!("  shredtop service stop     — stop the service");
+        println!("  shredtop service restart  — restart the service");
+        println!("  shredtop monitor          — open live dashboard");
         return Ok(());
     }
 
@@ -33,7 +33,7 @@ pub fn install(config_path: &std::path::Path) -> Result<()> {
 
     let unit = format!(
         r#"[Unit]
-Description=Shredder — Solana shred feed latency monitor
+Description=Shredtop — Solana shred feed latency monitor
 After=network.target
 
 [Service]
@@ -55,21 +55,21 @@ WantedBy=multi-user.target
     std::fs::write(UNIT_PATH, unit)?;
 
     let _ = Command::new("systemctl").arg("daemon-reload").status();
-    let _ = Command::new("systemctl").args(["enable", "shredder"]).status();
-    let _ = Command::new("systemctl").args(["start", "shredder"]).status();
+    let _ = Command::new("systemctl").args(["enable", "shredtop"]).status();
+    let _ = Command::new("systemctl").args(["start", "shredtop"]).status();
 
     println!("{}", color::bold_green("✓ Service installed, enabled, and started."));
     println!();
-    println!("  shredder monitor  — open live dashboard");
-    println!("  shredder status   — view latest metrics");
+    println!("  shredtop monitor  — open live dashboard");
+    println!("  shredtop status   — view latest metrics");
 
     Ok(())
 }
 
 pub fn uninstall() -> Result<()> {
-    let _ = Command::new("systemctl").args(["stop", "shredder"]).status();
+    let _ = Command::new("systemctl").args(["stop", "shredtop"]).status();
     let _ = Command::new("systemctl")
-        .args(["disable", "shredder"])
+        .args(["disable", "shredtop"])
         .status();
     std::fs::remove_file(UNIT_PATH)?;
     let _ = Command::new("systemctl").arg("daemon-reload").status();
@@ -79,9 +79,9 @@ pub fn uninstall() -> Result<()> {
 
 pub fn control(action: &str) -> Result<()> {
     let ok = Command::new("systemctl")
-        .args([action, "shredder"])
+        .args([action, "shredtop"])
         .status()?
         .success();
-    anyhow::ensure!(ok, "systemctl {} shredder failed", action);
+    anyhow::ensure!(ok, "systemctl {} shredtop failed", action);
     Ok(())
 }

@@ -1,6 +1,6 @@
-//! `shredder status` — show the most recent snapshot from the metrics log.
+//! `shredtop status` — show the most recent snapshot from the metrics log.
 //!
-//! Reads the last line from /var/log/shredder.jsonl and prints a static
+//! Reads the last line from /var/log/shredtop.jsonl and prints a static
 //! one-shot table. Use this to check on the running service without
 //! opening the live dashboard.
 
@@ -15,7 +15,7 @@ pub fn run() -> Result<()> {
         Ok(c) => c,
         Err(_) => {
             eprintln!("No metrics log found at {}.", DEFAULT_LOG);
-            eprintln!("Start the service first:  shredder service start");
+            eprintln!("Start the service first:  shredtop service start");
             return Ok(());
         }
     };
@@ -65,7 +65,7 @@ pub fn run() -> Result<()> {
     println!("{}", color::bold(&"=".repeat(width)));
     println!(
         "{}",
-        color::bold_cyan(&format!("{:^width$}", format!(" SHREDDER STATUS  {} ", time_str)))
+        color::bold_cyan(&format!("{:^width$}", format!(" SHREDTOP STATUS  {} ", time_str)))
     );
     println!("{}", color::bold(&"=".repeat(width)));
     println!("{}", color::dim(&format!("  Started: {}   Uptime: {}", started_str, uptime_str)));
@@ -264,14 +264,14 @@ pub fn run() -> Result<()> {
         println!(
             "{}",
             color::yellow(
-                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one."
+                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredtop discover` to add one."
             )
         );
         println!();
     }
     println!(
         "{}",
-        color::dim(&format!("Log: {}  (shredder service status for service health)", DEFAULT_LOG))
+        color::dim(&format!("Log: {}  (shredtop service status for service health)", DEFAULT_LOG))
     );
 
     Ok(())

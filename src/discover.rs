@@ -1,4 +1,4 @@
-//! `shredder discover` — show multicast memberships and configured sources.
+//! `shredtop discover` — show multicast memberships and configured sources.
 //!
 //! Queries the kernel for active multicast group memberships, lists configured
 //! sources from probe.toml, and shows DoubleZero group metadata if the CLI is
@@ -313,7 +313,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             }
             _ => {
                 println!("  {}", color::yellow("Running in shred-race-only mode."));
-                println!("  Add a baseline later via `shredder discover`.");
+                println!("  Add a baseline later via `shredtop discover`.");
             }
         }
     }
@@ -353,7 +353,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
 
         // Restart the background service so the new config takes effect.
         let svc_restarted = std::process::Command::new("systemctl")
-            .args(["restart", "shredder"])
+            .args(["restart", "shredtop"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -361,10 +361,10 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             .unwrap_or(false);
         if svc_restarted {
             println!();
-            println!("  {}", color::bold_green("✓ Service restarted. Run `shredder monitor` to watch live metrics."));
+            println!("  {}", color::bold_green("✓ Service restarted. Run `shredtop monitor` to watch live metrics."));
         } else {
             println!();
-            println!("  {}", color::yellow("⚠ Service not running. Start it with: shredder service start"));
+            println!("  {}", color::yellow("⚠ Service not running. Start it with: shredtop service start"));
         }
     } else {
         println!();
@@ -1039,7 +1039,7 @@ fn configure_capture() -> Option<CaptureConfig> {
     }
 
     let output_dir = if disks.is_empty() {
-        prompt_with_default("Output directory", "/var/log/shredder-capture", "full path")
+        prompt_with_default("Output directory", "/var/log/shredtop-capture", "full path")
     } else {
         print!("{}", color::yellow(&format!("Disk [1-{}, or enter path]: ", disks.len())));
         io::stdout().flush().ok();
@@ -1059,7 +1059,7 @@ fn configure_capture() -> Option<CaptureConfig> {
             disks[0].mount.trim_end_matches('/').to_string()
         };
 
-        format!("{}/shredder-capture", mount)
+        format!("{}/shredtop-capture", mount)
     };
 
     // ── Step 3: max size per format ──────────────────────────────────────────

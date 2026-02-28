@@ -1,4 +1,4 @@
-//! `probe.toml` configuration for shredder.
+//! `probe.toml` configuration for shredtop.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ pub struct CaptureConfig {
 impl CaptureConfig {
     fn default_enabled() -> bool { true }
     fn default_formats() -> Vec<String> { vec!["pcap".into()] }
-    fn default_output_dir() -> String { "/var/log/shredder-capture".into() }
+    fn default_output_dir() -> String { "/var/log/shredtop-capture".into() }
     fn default_rotate_mb() -> u64 { 500 }
 
     /// Number of ring files to keep for format at `idx`.
