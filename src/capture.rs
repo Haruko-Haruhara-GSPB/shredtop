@@ -330,18 +330,54 @@ impl CaptureWriter for JsonlCaptureWriter {
 
 // ─── Capture thread ──────────────────────────────────────────────────────────
 
-fn make_writer(config: &CaptureConfig) -> Box<dyn CaptureWriter> {
-    match config.format.as_str() {
-        "csv" => Box::new(
-            CsvCaptureWriter::new(config).expect("failed to create CSV capture writer"),
-        ),
-        "jsonl" => Box::new(
-            JsonlCaptureWriter::new(config).expect("failed to create JSONL capture writer"),
-        ),
-        _ => Box::new(
-            PcapCaptureWriter::new(config).expect("failed to create pcap capture writer"),
-        ),
+// ─── Multi-format fan-out writer ─────────────────────────────────────────────
+
+struct MultiWriter {
+    writers: Vec<Box<dyn CaptureWriter>>,
+}
+
+impl CaptureWriter for MultiWriter {
+    fn write_shred(
+        &mut self,
+        ts_ns: u64,
+        feed: &str,
+        dst_ip: [u8; 4],
+        dst_port: u16,
+        payload: &[u8],
+    ) -> io::Result<()> {
+        for w in &mut self.writers {
+            w.write_shred(ts_ns, feed, dst_ip, dst_port, payload)?;
+        }
+        Ok(())
     }
+
+    fn flush(&mut self) -> io::Result<()> {
+        for w in &mut self.writers {
+            w.flush()?;
+        }
+        Ok(())
+    }
+}
+
+fn make_writer(config: &CaptureConfig) -> Box<dyn CaptureWriter> {
+    let writers: Vec<Box<dyn CaptureWriter>> = config
+        .formats
+        .iter()
+        .map(|fmt| -> Box<dyn CaptureWriter> {
+            match fmt.as_str() {
+                "csv" => Box::new(
+                    CsvCaptureWriter::new(config).expect("failed to create CSV capture writer"),
+                ),
+                "jsonl" => Box::new(
+                    JsonlCaptureWriter::new(config).expect("failed to create JSONL capture writer"),
+                ),
+                _ => Box::new(
+                    PcapCaptureWriter::new(config).expect("failed to create pcap capture writer"),
+                ),
+            }
+        })
+        .collect();
+    Box::new(MultiWriter { writers })
 }
 
 /// Spawn the background capture thread and return immediately.

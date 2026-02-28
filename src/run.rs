@@ -67,8 +67,8 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
             let (tx, rx) = crossbeam_channel::bounded::<CaptureEvent>(4096);
             capture::spawn_capture_thread(cap_cfg, rx);
             eprintln!(
-                "shredder capture — writing {} to {}  ({} MB rotate, {} file ring)",
-                cap_cfg.format,
+                "shredder capture — writing [{}] to {}  ({} MB rotate, {} file ring)",
+                cap_cfg.formats.join(", "),
                 cap_cfg.output_dir,
                 cap_cfg.rotate_mb,
                 cap_cfg.ring_files,

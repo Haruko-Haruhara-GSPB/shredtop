@@ -26,23 +26,24 @@ pub struct CaptureConfig {
     /// Enable capture.
     #[serde(default = "CaptureConfig::default_enabled")]
     pub enabled: bool,
-    /// Output format: "pcap" (Wireshark), "csv", or "jsonl".
-    #[serde(default = "CaptureConfig::default_format")]
-    pub format: String,
+    /// Output formats: one or more of "pcap", "csv", "jsonl".
+    /// Each format writes its own ring of files under `output_dir`.
+    #[serde(default = "CaptureConfig::default_formats")]
+    pub formats: Vec<String>,
     /// Directory to write capture files into.
     #[serde(default = "CaptureConfig::default_output_dir")]
     pub output_dir: String,
     /// Rotate to a new file after this many megabytes.
     #[serde(default = "CaptureConfig::default_rotate_mb")]
     pub rotate_mb: u64,
-    /// Keep at most this many files; delete oldest on overflow.
+    /// Keep at most this many files per format; delete oldest on overflow.
     #[serde(default = "CaptureConfig::default_ring_files")]
     pub ring_files: usize,
 }
 
 impl CaptureConfig {
     fn default_enabled() -> bool { true }
-    fn default_format() -> String { "pcap".into() }
+    fn default_formats() -> Vec<String> { vec!["pcap".into()] }
     fn default_output_dir() -> String { "/var/log/shredder-capture".into() }
     fn default_rotate_mb() -> u64 { 500 }
     fn default_ring_files() -> usize { 20 }
@@ -52,7 +53,7 @@ impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
             enabled: Self::default_enabled(),
-            format: Self::default_format(),
+            formats: Self::default_formats(),
             output_dir: Self::default_output_dir(),
             rotate_mb: Self::default_rotate_mb(),
             ring_files: Self::default_ring_files(),

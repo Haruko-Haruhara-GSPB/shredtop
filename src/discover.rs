@@ -336,8 +336,8 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
         }
         if let Some(ref cap) = cfg.capture {
             println!(
-                "  Capture: {} → {}  ({} × {} MB = {} GB ring)",
-                cap.format,
+                "  Capture: [{}] → {}  ({} × {} MB = {} GB ring per format)",
+                cap.formats.join(", "),
                 cap.output_dir,
                 cap.ring_files,
                 cap.rotate_mb,
@@ -879,37 +879,46 @@ fn prompt_optional(label: &str, hint: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// Ask the user whether to enable raw shred capture, and if so, collect
-/// format, output directory, rotation size, and ring depth.
+/// formats, output directory, rotation size, and ring depth.
 /// Returns `None` if the user skips capture.
 fn configure_capture() -> Option<CaptureConfig> {
     println!();
     println!("Raw shred capture (optional — stores packets for offline analysis):");
     println!();
-    println!("  Choose one format:");
-    println!("  1) pcap   — Wireshark-compatible, industry standard  (recommended)");
+    println!("  Select one or more formats (comma-separated, e.g. 1,3):");
+    println!("  1) pcap   — Wireshark-compatible, industry standard");
     println!("  2) csv    — spreadsheet / pandas-friendly");
     println!("  3) jsonl  — structured JSON lines");
     println!("  4) Skip   — no capture");
-    print!("Choice [1/2/3/4, default=4]: ");
+    print!("Formats [1/2/3/4, default=4]: ");
     io::stdout().flush().ok();
 
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok();
     let choice = input.trim().to_string();
 
-    let format = match choice.as_str() {
-        "1" => "pcap",
-        "2" => "csv",
-        "3" => "jsonl",
-        "4" | "" => {
-            println!("  Capture disabled.");
-            return None;
+    // Parse comma-separated selections like "1", "1,3", "1,2,3".
+    // Any token that is "4" or unrecognised skips capture if it's the only token,
+    // or is silently ignored when mixed with valid format tokens.
+    let mut formats: Vec<String> = Vec::new();
+    let tokens: Vec<&str> = choice.split(',').map(str::trim).collect();
+
+    for token in &tokens {
+        match *token {
+            "1" => { if !formats.contains(&"pcap".to_string()) { formats.push("pcap".into()); } }
+            "2" => { if !formats.contains(&"csv".to_string())  { formats.push("csv".into());  } }
+            "3" => { if !formats.contains(&"jsonl".to_string()){ formats.push("jsonl".into()); } }
+            "4" | "" => {}
+            other => {
+                println!("  Ignoring unrecognised token {:?}.", other);
+            }
         }
-        other => {
-            println!("  Unknown choice {:?} — capture disabled. Re-run `shredder discover` to enable.", other);
-            return None;
-        }
-    };
+    }
+
+    if formats.is_empty() {
+        println!("  Capture disabled.");
+        return None;
+    }
 
     let output_dir = prompt_with_default(
         "Output directory",
@@ -920,20 +929,20 @@ fn configure_capture() -> Option<CaptureConfig> {
     let rotate_mb_str = prompt_with_default(
         "Rotate every (MB)",
         "500",
-        "new file after this many MB",
+        "new file after this many MB (per format)",
     );
     let rotate_mb: u64 = rotate_mb_str.parse().unwrap_or(500);
 
     let ring_files_str = prompt_with_default(
         "Keep last N files",
         "20",
-        &format!("ring depth  ({} × {} MB = {} GB)", 20, rotate_mb, 20 * rotate_mb / 1024),
+        &format!("ring depth per format  ({} × {} MB = {} GB each)", 20, rotate_mb, 20 * rotate_mb / 1024),
     );
     let ring_files: usize = ring_files_str.parse().unwrap_or(20);
 
     println!(
-        "  Capture: {} → {}  ({} × {} MB = {} GB ring)",
-        format,
+        "  Capture: [{}] → {}  ({} × {} MB = {} GB ring per format)",
+        formats.join(", "),
         output_dir,
         ring_files,
         rotate_mb,
@@ -942,7 +951,7 @@ fn configure_capture() -> Option<CaptureConfig> {
 
     Some(CaptureConfig {
         enabled: true,
-        format: format.to_string(),
+        formats,
         output_dir,
         rotate_mb,
         ring_files,
