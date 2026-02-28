@@ -996,12 +996,11 @@ fn configure_capture() -> Option<CaptureConfig> {
     println!("{}", color::bold_cyan("=== Raw shred capture (optional) ==="));
     println!("  Stores raw packets to disk for offline analysis and replay.");
     println!();
-    println!("  Select one or more formats (comma-separated, e.g. 1,3):");
     println!("  1) pcap   — Wireshark-compatible, industry standard");
     println!("  2) csv    — spreadsheet / pandas-friendly");
     println!("  3) jsonl  — structured JSON lines");
     println!("  4) Skip   — no capture");
-    print!("{}", color::yellow("Formats [1/2/3/4, default=4]: "));
+    print!("{}", color::yellow("Select the formats you want to record, separate by comma for multiple [default=4]: "));
     io::stdout().flush().ok();
 
     let mut input = String::new();
