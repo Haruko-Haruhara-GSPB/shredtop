@@ -192,10 +192,8 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
                     });
                 }
 
-                // Show active UDP sockets on detected shred ports
+                // Show active UDP sockets only when there's a conflict
                 let known_ports: Vec<u16> = traffic_ports.values().copied().collect();
-                println!();
-                println!("{}", color::bold_cyan("=== Active UDP sockets on shred ports ==="));
                 show_udp_sockets(&known_ports);
             }
         }
@@ -640,7 +638,7 @@ fn show_udp_sockets(ports: &[u16]) {
 
         if let Ok(output) = Command::new("ss").args(["-ulnp"]).output() {
             let text = String::from_utf8_lossy(&output.stdout);
-            let mut found = false;
+            let mut found_lines: Vec<String> = Vec::new();
             for line in text.lines().skip(1) {
                 let fields: Vec<&str> = line.split_whitespace().collect();
                 if fields.len() >= 5 {
@@ -648,19 +646,19 @@ fn show_udp_sockets(ports: &[u16]) {
                     let port = local.rsplit(':').next().unwrap_or("");
                     if port_strs.iter().any(|p| p == port) {
                         let process = fields.get(6).copied().unwrap_or("");
-                        println!("  UDP {}  {}", local, process);
-                        found = true;
+                        found_lines.push(format!("  UDP {}  {}", local, process));
                     }
                 }
             }
-            if !found {
-                println!(
-                    "  (no shred receivers found on port(s) {})",
-                    port_strs.join(", ")
-                );
+            // Only show this section when there IS a conflict — a receiver
+            // already bound to the port. If nothing is running, skip silently.
+            if !found_lines.is_empty() {
+                println!("{}", color::bold_cyan("=== Active UDP sockets on shred ports ==="));
+                for line in &found_lines {
+                    println!("{}", color::yellow(line));
+                }
+                println!("{}", color::yellow("  ⚠ Another process is already listening on these ports."));
             }
-        } else {
-            println!("  (ss command not available)");
         }
     }
 
