@@ -329,13 +329,40 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
         std::fs::write(config_path, toml_str)?;
         println!();
         println!("Written to {}.", config_path.display());
+        println!();
+        println!("  Sources configured:");
+        for src in &cfg.sources {
+            println!("    {}", src.name);
+        }
+        if let Some(ref cap) = cfg.capture {
+            println!(
+                "  Capture: {} → {}  ({} × {} MB = {} GB ring)",
+                cap.format,
+                cap.output_dir,
+                cap.ring_files,
+                cap.rotate_mb,
+                cap.ring_files as u64 * cap.rotate_mb / 1024,
+            );
+            println!("  Recording starts when the service starts (not yet).");
+        } else {
+            println!("  Capture: disabled");
+        }
 
         // Restart the background service so the new config takes effect.
-        let _ = std::process::Command::new("systemctl")
+        let svc_restarted = std::process::Command::new("systemctl")
             .args(["restart", "shredder"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if svc_restarted {
+            println!();
+            println!("  Service restarted. Run `shredder monitor` to watch live metrics.");
+        } else {
+            println!();
+            println!("  Service not running. Start it with: shredder service start");
+        }
     } else {
         println!();
         println!("No sources selected — probe.toml not modified.");
@@ -856,15 +883,14 @@ fn prompt_optional(label: &str, hint: &str) -> Option<String> {
 /// Returns `None` if the user skips capture.
 fn configure_capture() -> Option<CaptureConfig> {
     println!();
-    println!("Enable raw shred capture?");
-    println!("  Stores per-packet data to disk for offline analysis and sharing.");
+    println!("Raw shred capture (optional — stores packets for offline analysis):");
     println!();
-    println!("  Format?");
+    println!("  Choose one format:");
     println!("  1) pcap   — Wireshark-compatible, industry standard  (recommended)");
     println!("  2) csv    — spreadsheet / pandas-friendly");
     println!("  3) jsonl  — structured JSON lines");
     println!("  4) Skip   — no capture");
-    print!("Choice [1-4]: ");
+    print!("Choice [1/2/3/4, default=4]: ");
     io::stdout().flush().ok();
 
     let mut input = String::new();
@@ -872,10 +898,17 @@ fn configure_capture() -> Option<CaptureConfig> {
     let choice = input.trim().to_string();
 
     let format = match choice.as_str() {
-        "1" | "" => "pcap",
+        "1" => "pcap",
         "2" => "csv",
         "3" => "jsonl",
-        _ => return None,
+        "4" | "" => {
+            println!("  Capture disabled.");
+            return None;
+        }
+        other => {
+            println!("  Unknown choice {:?} — capture disabled. Re-run `shredder discover` to enable.", other);
+            return None;
+        }
     };
 
     let output_dir = prompt_with_default(
