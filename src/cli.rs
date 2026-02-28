@@ -74,6 +74,29 @@ pub enum Commands {
         action: CaptureAction,
     },
 
+    /// Analyze a pcap capture file for per-feed shred timing
+    ///
+    /// Reads any pcap written by `shredder capture` (or any third-party capture
+    /// of the same UDP multicast traffic), pairs shreds that arrived on multiple
+    /// feeds, and prints a timing table showing win rates and lead times.
+    ///
+    /// Example:
+    ///   shredder analyze capture.pcap \
+    ///     --feed 233.84.178.1=bebop \
+    ///     --feed 233.84.178.2=jito-shredstream
+    Analyze {
+        /// pcap file to analyze
+        pcap: std::path::PathBuf,
+
+        /// Feed IP=name mappings (repeatable), e.g. --feed 233.84.178.1=bebop
+        #[clap(long, value_parser = parse_feed_mapping)]
+        feed: Vec<(std::net::Ipv4Addr, String)>,
+
+        /// Minimum matched pairs required to display results
+        #[clap(long, default_value_t = 10)]
+        min_matched: u64,
+    },
+
     /// Background data collection daemon (used by the systemd service)
     #[clap(hide = true)]
     Run {
@@ -85,6 +108,16 @@ pub enum Commands {
         #[clap(long, default_value = crate::run::DEFAULT_LOG)]
         log: std::path::PathBuf,
     },
+}
+
+fn parse_feed_mapping(s: &str) -> std::result::Result<(std::net::Ipv4Addr, String), String> {
+    let (ip_str, name) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected IP=name, got '{}'", s))?;
+    let ip = ip_str
+        .parse::<std::net::Ipv4Addr>()
+        .map_err(|e| format!("invalid IP '{}': {}", ip_str, e))?;
+    Ok((ip, name.to_string()))
 }
 
 #[derive(Subcommand)]
