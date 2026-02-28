@@ -15,6 +15,49 @@ pub struct ProbeConfig {
     /// RPC-tier sources (rpc, geyser, jito-grpc) are always exempt.
     #[serde(default)]
     pub filter_programs: Vec<String>,
+    /// Raw shred capture configuration. Omit to disable capture.
+    #[serde(default)]
+    pub capture: Option<CaptureConfig>,
+}
+
+/// Configuration for the always-on ring-buffer capture subsystem.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CaptureConfig {
+    /// Enable capture.
+    #[serde(default = "CaptureConfig::default_enabled")]
+    pub enabled: bool,
+    /// Output format: "pcap" (Wireshark), "csv", or "jsonl".
+    #[serde(default = "CaptureConfig::default_format")]
+    pub format: String,
+    /// Directory to write capture files into.
+    #[serde(default = "CaptureConfig::default_output_dir")]
+    pub output_dir: String,
+    /// Rotate to a new file after this many megabytes.
+    #[serde(default = "CaptureConfig::default_rotate_mb")]
+    pub rotate_mb: u64,
+    /// Keep at most this many files; delete oldest on overflow.
+    #[serde(default = "CaptureConfig::default_ring_files")]
+    pub ring_files: usize,
+}
+
+impl CaptureConfig {
+    fn default_enabled() -> bool { true }
+    fn default_format() -> String { "pcap".into() }
+    fn default_output_dir() -> String { "/var/log/shredder-capture".into() }
+    fn default_rotate_mb() -> u64 { 500 }
+    fn default_ring_files() -> usize { 20 }
+}
+
+impl Default for CaptureConfig {
+    fn default() -> Self {
+        Self {
+            enabled: Self::default_enabled(),
+            format: Self::default_format(),
+            output_dir: Self::default_output_dir(),
+            rotate_mb: Self::default_rotate_mb(),
+            ring_files: Self::default_ring_files(),
+        }
+    }
 }
 
 /// One data source (shred feed or RPC endpoint).
@@ -58,6 +101,7 @@ impl ProbeConfig {
     pub fn default_example() -> Self {
         Self {
             filter_programs: Vec::new(),
+            capture: None,
             sources: vec![
                 SourceEntry {
                     name: "bebop".into(),

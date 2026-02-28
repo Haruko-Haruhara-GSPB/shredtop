@@ -10,6 +10,7 @@
 //! the shred lead time (positive = shred arrived before RPC).
 
 use crossbeam_channel::Sender;
+use crate::receiver::CaptureEvent;
 use dashmap::DashMap;
 use solana_pubkey::Pubkey;
 use std::collections::HashSet;
@@ -59,6 +60,8 @@ pub struct ShredTxSource {
     pub pin_recv_core: Option<usize>,
     pub pin_decode_core: Option<usize>,
     pub shred_version: Option<u16>,
+    /// Optional capture channel; forwarded to ShredReceiver for the hot-path tap.
+    pub capture_tx: Option<crossbeam_channel::Sender<CaptureEvent>>,
 }
 
 impl TxSource for ShredTxSource {
@@ -86,6 +89,7 @@ impl TxSource for ShredTxSource {
         let pin_recv = self.pin_recv_core;
         let name = self.name;
         let race_tx = race.as_ref().map(|r| r.sender());
+        let capture_tx = self.capture_tx.clone();
 
         let recv_handle = std::thread::Builder::new()
             .name(format!("{}-recv", name))
@@ -101,6 +105,7 @@ impl TxSource for ShredTxSource {
                     recv_metrics,
                     shred_version,
                     race_tx,
+                    capture_tx,
                 )
                 .expect("failed to create shred receiver");
                 receiver.run().expect("shred receiver crashed");

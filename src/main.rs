@@ -8,6 +8,8 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 mod bench;
+mod capture;
+mod capture_status;
 mod cli;
 mod config;
 mod discover;
@@ -17,7 +19,7 @@ mod service;
 mod status;
 mod upgrade;
 
-use cli::{Cli, Commands, ServiceAction};
+use cli::{CaptureAction, Cli, Commands, ServiceAction};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -28,7 +30,7 @@ fn main() -> Result<()> {
 
     // Load config (except for commands that don't need it)
     let config = match &cli.command {
-        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } | Commands::Monitor { .. } => None,
+        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } | Commands::Monitor { .. } | Commands::Capture { .. } => None,
         _ => {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
@@ -76,6 +78,9 @@ fn main() -> Result<()> {
             ServiceAction::Status => service::control("status")?,
             ServiceAction::Enable => service::control("enable")?,
             ServiceAction::Disable => service::control("disable")?,
+        },
+        Commands::Capture { action } => match action {
+            CaptureAction::List => capture_status::run(&cli.config)?,
         },
     }
 

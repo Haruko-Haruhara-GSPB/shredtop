@@ -125,23 +125,38 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     out.push(format!("  Started: {}   Uptime: {}", started_str, uptime_str));
     out.push(String::new());
 
-    // Column headers
-    out.push(format!(
-        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
-        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
-    ));
+    // Determine whether any baseline (rpc/geyser) source is present — must
+    // scan first so column headers can be decided before row rendering.
+    let mut has_rpc = false;
+    if let Some(sources) = entry["sources"].as_array() {
+        for s in sources {
+            if s["is_rpc"].as_bool().unwrap_or(false) {
+                has_rpc = true;
+                break;
+            }
+        }
+    }
+
+    // Column headers — BEAT%/LEAD columns only shown when a baseline exists
+    if has_rpc {
+        out.push(format!(
+            "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+            "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
+        ));
+    } else {
+        out.push(format!(
+            "{:<20}  {:>9}  {:>5}  {:>6}",
+            "SOURCE", "SHREDS/s", "COV%", "TXS/s",
+        ));
+    }
     out.push("-".repeat(W));
 
     let mut edge_lines: Vec<String> = Vec::new();
-    let mut has_rpc = false;
 
     if let Some(sources) = entry["sources"].as_array() {
         for s in sources {
             let name = s["name"].as_str().unwrap_or("?");
             let is_rpc = s["is_rpc"].as_bool().unwrap_or(false);
-            if is_rpc {
-                has_rpc = true;
-            }
 
             let shreds_str = if is_rpc {
                 "—".into()
@@ -154,42 +169,49 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
                 .map(|p| format!("{:.0}%", p.min(100.0)))
                 .unwrap_or_else(|| "—".into());
 
-            let beat_str = if is_rpc {
-                "—".into()
-            } else {
-                s["beat_rpc_pct"]
-                    .as_f64()
-                    .map(|p| format!("{:.0}%", p))
-                    .unwrap_or_else(|| "—".into())
-            };
-
             let txs_str = format!("{:.0}", s["txs_per_sec"].as_f64().unwrap_or(0.0));
 
-            let (avg_str, p50_str, p95_str, p99_str) = if is_rpc {
-                ("baseline".into(), "—".into(), "—".into(), "—".into())
-            } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
-                let avg = format!("{:+.1}ms", mean_us / 1000.0);
-                let p50 = s["lead_time_p50_us"].as_f64()
-                    .map(|v| format!("{:+.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                let p95 = s["lead_time_p95_us"].as_f64()
-                    .map(|v| format!("{:+.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                let p99 = s["lead_time_p99_us"].as_f64()
-                    .map(|v| format!("{:+.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                (avg, p50, p95, p99)
+            if has_rpc {
+                let beat_str = if is_rpc {
+                    "—".into()
+                } else {
+                    s["beat_rpc_pct"]
+                        .as_f64()
+                        .map(|p| format!("{:.0}%", p))
+                        .unwrap_or_else(|| "—".into())
+                };
+
+                let (avg_str, p50_str, p95_str, p99_str) = if is_rpc {
+                    ("baseline".into(), "—".into(), "—".into(), "—".into())
+                } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
+                    let avg = format!("{:+.1}ms", mean_us / 1000.0);
+                    let p50 = s["lead_time_p50_us"].as_f64()
+                        .map(|v| format!("{:+.1}ms", v / 1000.0))
+                        .unwrap_or_else(|| "—".into());
+                    let p95 = s["lead_time_p95_us"].as_f64()
+                        .map(|v| format!("{:+.1}ms", v / 1000.0))
+                        .unwrap_or_else(|| "—".into());
+                    let p99 = s["lead_time_p99_us"].as_f64()
+                        .map(|v| format!("{:+.1}ms", v / 1000.0))
+                        .unwrap_or_else(|| "—".into());
+                    (avg, p50, p95, p99)
+                } else {
+                    ("—".into(), "—".into(), "—".into(), "—".into())
+                };
+
+                out.push(format!(
+                    "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+                    name, shreds_str, cov_str, txs_str, beat_str, avg_str, p50_str, p95_str, p99_str,
+                ));
             } else {
-                ("—".into(), "—".into(), "—".into(), "—".into())
-            };
+                out.push(format!(
+                    "{:<20}  {:>9}  {:>5}  {:>6}",
+                    name, shreds_str, cov_str, txs_str,
+                ));
+            }
 
-            out.push(format!(
-                "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
-                name, shreds_str, cov_str, txs_str, beat_str, avg_str, p50_str, p95_str, p99_str,
-            ));
-
-            // Edge assessment for shred sources
-            if !is_rpc {
+            // Edge assessment for shred sources (only meaningful with a baseline)
+            if !is_rpc && has_rpc {
                 if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
                     let mean_ms = mean_us / 1000.0;
                     let samples = s["lead_time_samples"].as_u64().unwrap_or(0);
@@ -286,7 +308,10 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     out.push("EDGE ASSESSMENT:".into());
     if edge_lines.is_empty() {
         if !has_rpc {
-            out.push("  Add an rpc source to probe.toml to enable lead-time measurement.".into());
+            out.push(
+                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one."
+                    .into(),
+            );
         } else {
             out.push("  Warming up — lead times appear once transactions match across feeds.".into());
         }
@@ -298,11 +323,15 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
     out.push(String::new());
     out.push("-".repeat(W));
-    out.push(
-        "COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  \
-         LEAD = ms before RPC confirms  p50/p95/p99 = percentiles"
-            .into(),
-    );
+    if has_rpc {
+        out.push(
+            "COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  \
+             LEAD = ms before RPC confirms  p50/p95/p99 = percentiles"
+                .into(),
+        );
+    } else {
+        out.push("COV% = block shreds received  (add a baseline to unlock BEAT%/LEAD columns)".into());
+    }
 
     let count = out.len();
     for line in out {
@@ -329,6 +358,7 @@ fn format_num(n: u64) -> String {
 
 pub fn build_source(
     entry: &SourceEntry,
+    capture_tx: Option<crossbeam_channel::Sender<shred_ingest::CaptureEvent>>,
 ) -> Result<(Box<dyn shred_ingest::TxSource>, Arc<SourceMetrics>)> {
     let name: &'static str = Box::leak(entry.name.clone().into_boxed_str());
     // rpc and geyser are baseline sources; shred and jito-grpc are shred-tier feeds.
@@ -354,6 +384,7 @@ pub fn build_source(
                 pin_recv_core: entry.pin_recv_core,
                 pin_decode_core: entry.pin_decode_core,
                 shred_version: entry.shred_version,
+                capture_tx,
             })
         }
         "rpc" => {

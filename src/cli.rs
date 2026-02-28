@@ -68,6 +68,12 @@ pub enum Commands {
         source: bool,
     },
 
+    /// Manage and inspect the on-disk capture ring
+    Capture {
+        #[clap(subcommand)]
+        action: CaptureAction,
+    },
+
     /// Background data collection daemon (used by the systemd service)
     #[clap(hide = true)]
     Run {
@@ -79,6 +85,12 @@ pub enum Commands {
         #[clap(long, default_value = crate::run::DEFAULT_LOG)]
         log: std::path::PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+pub enum CaptureAction {
+    /// List capture ring files with sizes and timestamp coverage
+    List,
 }
 
 #[derive(Subcommand)]

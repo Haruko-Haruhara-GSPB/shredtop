@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use crate::config::{ProbeConfig, SourceEntry};
+use crate::config::{CaptureConfig, ProbeConfig, SourceEntry};
 
 pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
     // -----------------------------------------------------------------------
@@ -233,30 +233,88 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
     // -----------------------------------------------------------------------
     // RPC baseline
     // -----------------------------------------------------------------------
-    if !sources_to_write.is_empty() {
-        // Check if an rpc/geyser baseline already exists in what we're writing.
-        let has_baseline = sources_to_write
+    // Check if an rpc/geyser baseline already exists (either in what we're
+    // writing or in the existing config).
+    let has_baseline_already = sources_to_write
+        .iter()
+        .any(|s| matches!(s.source_type.as_str(), "rpc" | "geyser" | "jito-grpc"))
+        || config
+            .sources
             .iter()
             .any(|s| matches!(s.source_type.as_str(), "rpc" | "geyser" | "jito-grpc"));
 
-        if !has_baseline {
-            let rpc_url = detect_rpc_url();
-            println!();
-            println!("RPC baseline: {} (added automatically)", rpc_url);
-            sources_to_write.push(SourceEntry {
-                name: "rpc".into(),
-                source_type: "rpc".into(),
-                multicast_addr: None,
-                port: None,
-                interface: None,
-                url: Some(rpc_url),
-                x_token: None,
-                pin_recv_core: None,
-                pin_decode_core: None,
-                shred_version: None,
-            });
+    if !has_baseline_already {
+        println!();
+        println!("No baseline source configured.");
+        println!("A baseline (rpc/geyser) enables BEAT%/LEAD metrics — comparison of shred feeds");
+        println!("vs block confirmation. Without one, SHRED RACE (inter-feed comparison) is still");
+        println!("fully active.");
+        println!();
+        println!("Add a baseline?");
+        println!("  1) Auto-detect local RPC  (tries ports 8899, 58000, 8900, 9000, 8080)");
+        println!("  2) Enter URL manually");
+        println!("  3) Skip — shred race only");
+        print!("Choice [1-3]: ");
+        io::stdout().flush().ok();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).ok();
+        let choice = input.trim().to_string();
+
+        match choice.as_str() {
+            "1" | "" => {
+                print!("  Probing local RPC ports...");
+                io::stdout().flush().ok();
+                match detect_rpc_url() {
+                    Some(url) => {
+                        println!(" found: {}", url);
+                        if prompt_yn(&format!("  Add {} as baseline?", url)) {
+                            sources_to_write.push(SourceEntry {
+                                name: "rpc".into(),
+                                source_type: "rpc".into(),
+                                multicast_addr: None,
+                                port: None,
+                                interface: None,
+                                url: Some(url),
+                                x_token: None,
+                                pin_recv_core: None,
+                                pin_decode_core: None,
+                                shred_version: None,
+                            });
+                        }
+                    }
+                    None => {
+                        println!(" none found.");
+                        println!("  No local RPC detected. Try option 2 to enter a remote URL.");
+                    }
+                }
+            }
+            "2" => {
+                let url = prompt_required("  RPC URL", "e.g. http://127.0.0.1:8899");
+                sources_to_write.push(SourceEntry {
+                    name: "rpc".into(),
+                    source_type: "rpc".into(),
+                    multicast_addr: None,
+                    port: None,
+                    interface: None,
+                    url: Some(url),
+                    x_token: None,
+                    pin_recv_core: None,
+                    pin_decode_core: None,
+                    shred_version: None,
+                });
+            }
+            _ => {
+                println!("  Running in shred-race-only mode.");
+                println!("  Add a baseline later via `shredder discover`.");
+            }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Capture configuration
+    // -----------------------------------------------------------------------
+    let capture_cfg = configure_capture();
 
     // -----------------------------------------------------------------------
     // Write probe.toml
@@ -265,6 +323,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
         let cfg = ProbeConfig {
             sources: sources_to_write,
             filter_programs: Vec::new(),
+            capture: capture_cfg,
         };
         let toml_str = toml::to_string_pretty(&cfg)?;
         std::fs::write(config_path, toml_str)?;
@@ -582,8 +641,9 @@ fn show_udp_sockets(ports: &[u16]) {
 // ---------------------------------------------------------------------------
 
 /// Probe candidate localhost RPC ports and return the URL of the first one
-/// that responds to a Solana `getHealth` JSON-RPC call.
-fn detect_rpc_url() -> String {
+/// that responds to a Solana `getHealth` JSON-RPC call. Returns `None` if no
+/// local RPC is found on any candidate port.
+fn detect_rpc_url() -> Option<String> {
     const CANDIDATES: &[u16] = &[8899, 58000, 8900, 9000, 8080];
     const BODY: &str = r#"{"jsonrpc":"2.0","id":1,"method":"getHealth"}"#;
 
@@ -607,11 +667,11 @@ fn detect_rpc_url() -> String {
         let mut response = String::new();
         let _ = stream.read_to_string(&mut response);
         if response.contains("\"result\"") {
-            return format!("http://127.0.0.1:{}", port);
+            return Some(format!("http://127.0.0.1:{}", port));
         }
     }
 
-    "http://127.0.0.1:8899".to_string()
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -785,4 +845,73 @@ fn prompt_optional(label: &str, hint: &str) -> Option<String> {
     } else {
         Some(val)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Capture configuration wizard
+// ---------------------------------------------------------------------------
+
+/// Ask the user whether to enable raw shred capture, and if so, collect
+/// format, output directory, rotation size, and ring depth.
+/// Returns `None` if the user skips capture.
+fn configure_capture() -> Option<CaptureConfig> {
+    println!();
+    println!("Enable raw shred capture?");
+    println!("  Stores per-packet data to disk for offline analysis and sharing.");
+    println!();
+    println!("  Format?");
+    println!("  1) pcap   — Wireshark-compatible, industry standard  (recommended)");
+    println!("  2) csv    — spreadsheet / pandas-friendly");
+    println!("  3) jsonl  — structured JSON lines");
+    println!("  4) Skip   — no capture");
+    print!("Choice [1-4]: ");
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).ok();
+    let choice = input.trim().to_string();
+
+    let format = match choice.as_str() {
+        "1" | "" => "pcap",
+        "2" => "csv",
+        "3" => "jsonl",
+        _ => return None,
+    };
+
+    let output_dir = prompt_with_default(
+        "Output directory",
+        "/var/log/shredder-capture",
+        "path to write capture files",
+    );
+
+    let rotate_mb_str = prompt_with_default(
+        "Rotate every (MB)",
+        "500",
+        "new file after this many MB",
+    );
+    let rotate_mb: u64 = rotate_mb_str.parse().unwrap_or(500);
+
+    let ring_files_str = prompt_with_default(
+        "Keep last N files",
+        "20",
+        &format!("ring depth  ({} × {} MB = {} GB)", 20, rotate_mb, 20 * rotate_mb / 1024),
+    );
+    let ring_files: usize = ring_files_str.parse().unwrap_or(20);
+
+    println!(
+        "  Capture: {} → {}  ({} × {} MB = {} GB ring)",
+        format,
+        output_dir,
+        ring_files,
+        rotate_mb,
+        ring_files as u64 * rotate_mb / 1024,
+    );
+
+    Some(CaptureConfig {
+        enabled: true,
+        format: format.to_string(),
+        output_dir,
+        rotate_mb,
+        ring_files,
+    })
 }

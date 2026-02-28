@@ -15,7 +15,7 @@ pub use decoder::{DecodedTx, ShredDecoder};
 pub use fan_in::{FanInSource, RpcTxSource, ShredTxSource, TxSource};
 pub use geyser_source::GeyserTxSource;
 pub use jito_source::JitoShredstreamSource;
-pub use receiver::ShredReceiver;
+pub use receiver::{CaptureEvent, ShredReceiver};
 pub use rpc_source::RpcSource;
 pub use shred_race::{ShredPairSnapshot, ShredRaceTracker};
 pub use source::{start_source, SourceConfig};

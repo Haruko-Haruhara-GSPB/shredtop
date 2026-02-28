@@ -54,6 +54,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc = "0.2"
 clap = { version = "4", features = ["derive"] }
 chrono = "0.4"
+pcap-file = "2"
 
 # ─── Binary crate ────────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ toml = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 libc = { workspace = true }
+pcap-file = { workspace = true }
 
 [profile.release]
 opt-level = 3

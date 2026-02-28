@@ -53,6 +53,13 @@ pub fn run() -> Result<()> {
         ("—".into(), "—".into())
     };
 
+    // Determine whether any baseline (rpc/geyser) source is present before
+    // printing headers so column layout can be decided upfront.
+    let has_rpc = entry["sources"]
+        .as_array()
+        .map(|sources| sources.iter().any(|s| s["is_rpc"].as_bool().unwrap_or(false)))
+        .unwrap_or(false);
+
     let width = 100;
     println!("{:=<width$}", "");
     println!(
@@ -62,10 +69,18 @@ pub fn run() -> Result<()> {
     println!("{:=<width$}", "");
     println!("  Started: {}   Uptime: {}", started_str, uptime_str);
     println!();
-    println!(
-        "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
-        "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
-    );
+
+    if has_rpc {
+        println!(
+            "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+            "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
+        );
+    } else {
+        println!(
+            "{:<20}  {:>9}  {:>5}  {:>6}",
+            "SOURCE", "SHREDS/s", "COV%", "TXS/s",
+        );
+    }
     println!("{:-<width$}", "");
 
     if let Some(sources) = entry["sources"].as_array() {
@@ -87,36 +102,43 @@ pub fn run() -> Result<()> {
                     .unwrap_or_else(|| "—".into())
             };
             let txs = s["txs_per_sec"].as_f64().unwrap_or(0.0);
-            let beat = if is_rpc {
-                "—".into()
-            } else {
-                s["beat_rpc_pct"]
-                    .as_f64()
-                    .map(|p| format!("{:.0}%", p))
-                    .unwrap_or_else(|| "—".into())
-            };
-            let (avg_str, p50_str, p95_str, p99_str) = if is_rpc {
-                ("baseline".into(), "—".into(), "—".into(), "—".into())
-            } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
-                let avg = format!("{:+.1}ms", mean_us / 1000.0);
-                let p50 = s["lead_time_p50_us"].as_f64()
-                    .map(|v| format!("{:+.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                let p95 = s["lead_time_p95_us"].as_f64()
-                    .map(|v| format!("{:+.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                let p99 = s["lead_time_p99_us"].as_f64()
-                    .map(|v| format!("{:+.1}ms", v / 1000.0))
-                    .unwrap_or_else(|| "—".into());
-                (avg, p50, p95, p99)
-            } else {
-                ("—".into(), "—".into(), "—".into(), "—".into())
-            };
 
-            println!(
-                "{:<20}  {:>9}  {:>5}  {:>6.0}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
-                name, shreds_str, cov, txs, beat, avg_str, p50_str, p95_str, p99_str,
-            );
+            if has_rpc {
+                let beat = if is_rpc {
+                    "—".into()
+                } else {
+                    s["beat_rpc_pct"]
+                        .as_f64()
+                        .map(|p| format!("{:.0}%", p))
+                        .unwrap_or_else(|| "—".into())
+                };
+                let (avg_str, p50_str, p95_str, p99_str) = if is_rpc {
+                    ("baseline".into(), "—".into(), "—".into(), "—".into())
+                } else if let Some(mean_us) = s["lead_time_mean_us"].as_f64() {
+                    let avg = format!("{:+.1}ms", mean_us / 1000.0);
+                    let p50 = s["lead_time_p50_us"].as_f64()
+                        .map(|v| format!("{:+.1}ms", v / 1000.0))
+                        .unwrap_or_else(|| "—".into());
+                    let p95 = s["lead_time_p95_us"].as_f64()
+                        .map(|v| format!("{:+.1}ms", v / 1000.0))
+                        .unwrap_or_else(|| "—".into());
+                    let p99 = s["lead_time_p99_us"].as_f64()
+                        .map(|v| format!("{:+.1}ms", v / 1000.0))
+                        .unwrap_or_else(|| "—".into());
+                    (avg, p50, p95, p99)
+                } else {
+                    ("—".into(), "—".into(), "—".into(), "—".into())
+                };
+                println!(
+                    "{:<20}  {:>9}  {:>5}  {:>6.0}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+                    name, shreds_str, cov, txs, beat, avg_str, p50_str, p95_str, p99_str,
+                );
+            } else {
+                println!(
+                    "{:<20}  {:>9}  {:>5}  {:>6.0}",
+                    name, shreds_str, cov, txs,
+                );
+            }
         }
     }
 
@@ -205,6 +227,12 @@ pub fn run() -> Result<()> {
         "  timestamp (SO_TIMESTAMPNS), before any userspace processing."
     );
     println!();
+    if !has_rpc {
+        println!(
+            "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one."
+        );
+        println!();
+    }
     println!("Log: {}  (shredder service status for service health)", DEFAULT_LOG);
 
     Ok(())

@@ -7,12 +7,13 @@
 
 use anyhow::Result;
 use serde::Serialize;
-use shred_ingest::{DecodedTx, FanInSource, ShredPairSnapshot, SourceMetricsSnapshot};
+use shred_ingest::{CaptureEvent, DecodedTx, FanInSource, ShredPairSnapshot, SourceMetricsSnapshot};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::capture;
 use crate::config::ProbeConfig;
 use crate::monitor::build_source;
 
@@ -60,10 +61,27 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
     );
     eprintln!("Run `shredder status` to check current metrics.");
 
+    // Spin up the capture thread if [capture] is configured and enabled.
+    let cap_tx: Option<crossbeam_channel::Sender<CaptureEvent>> =
+        if let Some(cap_cfg) = config.capture.as_ref().filter(|c| c.enabled) {
+            let (tx, rx) = crossbeam_channel::bounded::<CaptureEvent>(4096);
+            capture::spawn_capture_thread(cap_cfg, rx);
+            eprintln!(
+                "shredder capture — writing {} to {}  ({} MB rotate, {} file ring)",
+                cap_cfg.format,
+                cap_cfg.output_dir,
+                cap_cfg.rotate_mb,
+                cap_cfg.ring_files,
+            );
+            Some(tx)
+        } else {
+            None
+        };
+
     let mut fan_in = FanInSource::new();
     fan_in.filter_programs = config.filter_programs.clone();
     for entry in &config.sources {
-        let (source, metrics) = build_source(entry)?;
+        let (source, metrics) = build_source(entry, cap_tx.clone())?;
         fan_in.add_source(source, metrics);
     }
 

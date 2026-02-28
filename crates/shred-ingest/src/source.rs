@@ -48,6 +48,7 @@ pub fn start_source(
                         recv_metrics,
                         shred_version,
                         None,
+                        None,
                     )
                     .expect("failed to create shred receiver");
                     receiver.run().expect("shred receiver crashed");

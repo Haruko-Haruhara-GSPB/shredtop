@@ -63,7 +63,7 @@ pub fn run(config: &ProbeConfig, duration_secs: u64, output: Option<PathBuf>) ->
     fan_in.filter_programs = config.filter_programs.clone();
 
     for entry in &config.sources {
-        let (source, metrics) = build_source(entry)?;
+        let (source, metrics) = build_source(entry, None)?;
         fan_in.add_source(source, metrics);
     }
 

@@ -29,6 +29,17 @@ pub struct RawShred {
     pub recv_timestamp_ns: u64,
 }
 
+/// Event sent from the UDP receiver hot-path to the capture thread.
+/// The channel is bounded(4096); `try_send` never blocks — packets are
+/// silently dropped on overflow rather than stalling the hot path.
+pub struct CaptureEvent {
+    pub ts_ns: u64,
+    pub feed: &'static str,
+    pub dst_ip: [u8; 4],
+    pub dst_port: u16,
+    pub payload: Vec<u8>,
+}
+
 pub struct ShredReceiver {
     socket: Socket,
     tx: Sender<RawShred>,
@@ -44,6 +55,13 @@ pub struct ShredReceiver {
     /// Optional channel to the shred race tracker. Each received shred's
     /// (slot, shred_index) is forwarded here for cross-feed comparison.
     race_tx: Option<Sender<ShredArrival>>,
+    /// Optional channel to the capture thread. Receives a copy of every raw
+    /// shred packet; drops silently on overflow to protect the hot path.
+    capture_tx: Option<Sender<CaptureEvent>>,
+    /// Multicast destination IP stored for capture event metadata.
+    dst_ip: [u8; 4],
+    /// UDP destination port stored for capture event metadata.
+    dst_port: u16,
 }
 
 // Standard Solana shred MTU — used by both Linux and fallback paths.
@@ -72,6 +90,7 @@ impl ShredReceiver {
         metrics: Arc<SourceMetrics>,
         shred_version: Option<u16>,
         race_tx: Option<Sender<ShredArrival>>,
+        capture_tx: Option<Sender<CaptureEvent>>,
     ) -> Result<Self> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
         socket.set_reuse_address(true)?;
@@ -130,8 +149,19 @@ impl ShredReceiver {
         socket.set_recv_buffer_size(4 * 1024 * 1024)?;
 
         let rt_to_mono_offset_ns = sample_rt_to_mono_offset_ns();
+        let dst_ip = mcast_addr.octets();
 
-        Ok(Self { socket, tx, metrics, shred_version, rt_to_mono_offset_ns, race_tx })
+        Ok(Self {
+            socket,
+            tx,
+            metrics,
+            shred_version,
+            rt_to_mono_offset_ns,
+            race_tx,
+            capture_tx,
+            dst_ip,
+            dst_port: port,
+        })
     }
 
     /// Main receive loop — should run on a pinned, isolated core.
@@ -228,6 +258,18 @@ impl ShredReceiver {
                     }
                 }
 
+                // Capture tap: clone raw bytes to the capture thread.
+                // try_send never blocks; silent drop on channel overflow.
+                if let Some(ref ctx) = self.capture_tx {
+                    let _ = ctx.try_send(CaptureEvent {
+                        ts_ns: ts,
+                        feed: self.metrics.name,
+                        dst_ip: self.dst_ip,
+                        dst_port: self.dst_port,
+                        payload: pkts[i][..len].to_vec(),
+                    });
+                }
+
                 self.metrics.shreds_received.fetch_add(1, Relaxed);
                 self.metrics.bytes_received.fetch_add(len as u64, Relaxed);
 
@@ -272,6 +314,17 @@ impl ShredReceiver {
                         recv_ns: ts,
                     });
                 }
+            }
+
+            // Capture tap.
+            if let Some(ref ctx) = self.capture_tx {
+                let _ = ctx.try_send(CaptureEvent {
+                    ts_ns: ts,
+                    feed: self.metrics.name,
+                    dst_ip: self.dst_ip,
+                    dst_port: self.dst_port,
+                    payload: buf[..n].to_vec(),
+                });
             }
 
             self.metrics.shreds_received.fetch_add(1, Relaxed);
