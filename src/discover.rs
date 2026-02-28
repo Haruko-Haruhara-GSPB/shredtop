@@ -1000,7 +1000,7 @@ fn configure_capture() -> Option<CaptureConfig> {
     println!("  2) csv    — spreadsheet / pandas-friendly");
     println!("  3) jsonl  — structured JSON lines");
     println!("  4) Skip   — no capture");
-    print!("{}", color::yellow("Select the formats you want to record, separate by comma for multiple [default=4]: "));
+    print!("{}", color::yellow("Select the formats you want to record [4] (comma-separated numbers, or Enter for default): "));
     io::stdout().flush().ok();
 
     let mut input = String::new();
