@@ -66,12 +66,20 @@ pub fn run(config: &ProbeConfig, interval_secs: u64, log_path: PathBuf) -> Resul
         if let Some(cap_cfg) = config.capture.as_ref().filter(|c| c.enabled) {
             let (tx, rx) = crossbeam_channel::bounded::<CaptureEvent>(4096);
             capture::spawn_capture_thread(cap_cfg, rx);
+            let sizes: Vec<String> = cap_cfg
+                .formats
+                .iter()
+                .enumerate()
+                .map(|(i, fmt)| {
+                    let max = cap_cfg.max_size_mb.get(i).copied().unwrap_or(10_000);
+                    format!("{fmt}≤{max}MB")
+                })
+                .collect();
             eprintln!(
-                "shredder capture — writing [{}] to {}  ({} MB rotate, {} file ring)",
-                cap_cfg.formats.join(", "),
+                "shredder capture — {} → {}  ({} MB rotate)",
+                sizes.join(", "),
                 cap_cfg.output_dir,
                 cap_cfg.rotate_mb,
-                cap_cfg.ring_files,
             );
             Some(tx)
         } else {

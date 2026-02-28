@@ -30,15 +30,17 @@ pub struct CaptureConfig {
     /// Each format writes its own ring of files under `output_dir`.
     #[serde(default = "CaptureConfig::default_formats")]
     pub formats: Vec<String>,
+    /// Maximum total disk space (MB) each format's ring may consume.
+    /// Parallel to `formats`; index N applies to `formats[N]`.
+    /// Missing entries fall back to 10 000 MB (10 GB).
+    #[serde(default)]
+    pub max_size_mb: Vec<u64>,
     /// Directory to write capture files into.
     #[serde(default = "CaptureConfig::default_output_dir")]
     pub output_dir: String,
     /// Rotate to a new file after this many megabytes.
     #[serde(default = "CaptureConfig::default_rotate_mb")]
     pub rotate_mb: u64,
-    /// Keep at most this many files per format; delete oldest on overflow.
-    #[serde(default = "CaptureConfig::default_ring_files")]
-    pub ring_files: usize,
 }
 
 impl CaptureConfig {
@@ -46,7 +48,13 @@ impl CaptureConfig {
     fn default_formats() -> Vec<String> { vec!["pcap".into()] }
     fn default_output_dir() -> String { "/var/log/shredder-capture".into() }
     fn default_rotate_mb() -> u64 { 500 }
-    fn default_ring_files() -> usize { 20 }
+
+    /// Number of ring files to keep for format at `idx`.
+    /// Derived from `max_size_mb[idx] / rotate_mb`, minimum 2.
+    pub fn ring_files_for(&self, idx: usize) -> usize {
+        let max = self.max_size_mb.get(idx).copied().unwrap_or(10_000);
+        ((max / self.rotate_mb) as usize).max(2)
+    }
 }
 
 impl Default for CaptureConfig {
@@ -54,9 +62,9 @@ impl Default for CaptureConfig {
         Self {
             enabled: Self::default_enabled(),
             formats: Self::default_formats(),
+            max_size_mb: vec![10_000],
             output_dir: Self::default_output_dir(),
             rotate_mb: Self::default_rotate_mb(),
-            ring_files: Self::default_ring_files(),
         }
     }
 }

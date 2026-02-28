@@ -74,12 +74,18 @@ pub fn run(config_path: &Path) -> Result<()> {
         println!("  {:<30}  {:>8}  {}", name, size_str, ts_str);
     }
 
+    let ring_cap_mb: u64 = cap
+        .formats
+        .iter()
+        .enumerate()
+        .map(|(i, _)| cap.ring_files_for(i) as u64 * cap.rotate_mb)
+        .sum();
     println!(
-        "  Total: {}   ({} file(s), ring capacity {} × {} MB)",
+        "  Total: {}   ({} file(s), ring capacity {} MB across {} format(s))",
         human_size(total_bytes),
         files.len(),
-        cap.ring_files,
-        cap.rotate_mb,
+        ring_cap_mb,
+        cap.formats.len(),
     );
 
     Ok(())

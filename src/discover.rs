@@ -335,14 +335,10 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             println!("    {}", src.name);
         }
         if let Some(ref cap) = cfg.capture {
-            println!(
-                "  Capture: [{}] → {}  ({} × {} MB = {} GB ring per format)",
-                cap.formats.join(", "),
-                cap.output_dir,
-                cap.ring_files,
-                cap.rotate_mb,
-                cap.ring_files as u64 * cap.rotate_mb / 1024,
-            );
+            for (i, fmt) in cap.formats.iter().enumerate() {
+                let max_mb = cap.max_size_mb.get(i).copied().unwrap_or(10_000);
+                println!("  Capture ({}): {} → {}  (≤{} MB)", fmt, fmt, cap.output_dir, max_mb);
+            }
             println!("  Recording starts when the service starts (not yet).");
         } else {
             println!("  Capture: disabled");
@@ -878,8 +874,110 @@ fn prompt_optional(label: &str, hint: &str) -> Option<String> {
 // Capture configuration wizard
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Disk discovery helper
+// ---------------------------------------------------------------------------
+
+struct DiskEntry {
+    mount: String,
+    size: String,
+    avail: String,
+    use_pct: String,
+}
+
+/// Run `df -hT`, filter pseudo-filesystems, return real mounts with free space.
+fn list_disks() -> Vec<DiskEntry> {
+    // Try Linux `df -hT` (shows filesystem type for filtering).
+    // Falls back to `df -h` if -T is unsupported (macOS).
+    let out = Command::new("df")
+        .args(["-hT"])
+        .output()
+        .or_else(|_| Command::new("df").args(["-h"]).output());
+
+    let output = match out {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return Vec::new(),
+    };
+
+    let text = String::from_utf8_lossy(&output);
+    let pseudo = [
+        "tmpfs", "devtmpfs", "devpts", "sysfs", "proc", "cgroup", "cgroup2",
+        "overlay", "squashfs", "udev", "hugetlbfs", "mqueue", "nsfs",
+        "securityfs", "fusectl", "tracefs", "debugfs", "configfs", "bpf",
+        "efivarfs", "autofs", "pstore",
+    ];
+
+    let mut entries = Vec::new();
+    for line in text.lines().skip(1) {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        // `df -hT`: Filesystem Type Size Used Avail Use% Mounted
+        // `df -h`:  Filesystem      Size Used Avail Use% Mounted
+        // We detect by checking if col[1] looks like a type (no '/' or '%').
+        let (fstype, size, avail, use_pct, mount) = if cols.len() >= 7 {
+            // Likely -hT format
+            (cols[1], cols[2], cols[4], cols[5], cols[6])
+        } else if cols.len() >= 6 {
+            // Plain -h format (no type column)
+            ("", cols[1], cols[3], cols[4], cols[5])
+        } else {
+            continue;
+        };
+
+        // Skip pseudo filesystems by type.
+        if pseudo.iter().any(|&p| p == fstype) {
+            continue;
+        }
+        // Skip pseudo mount points.
+        if mount.starts_with("/proc")
+            || mount.starts_with("/sys")
+            || mount.starts_with("/dev/pts")
+            || mount.starts_with("/run/user")
+        {
+            continue;
+        }
+        // Skip if size is effectively zero or the "0" placeholder.
+        if size == "0" || size.starts_with('0') {
+            continue;
+        }
+
+        entries.push(DiskEntry {
+            mount: mount.to_string(),
+            size: size.to_string(),
+            avail: avail.to_string(),
+            use_pct: use_pct.to_string(),
+        });
+    }
+    entries
+}
+
+/// Parse a human-readable size like "10G", "500M", "2T", or bare "50000" (MB).
+/// Returns megabytes.
+fn parse_size_mb(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (num_part, suffix) = if s.ends_with(|c: char| c.is_alphabetic()) {
+        s.split_at(s.len() - 1)
+    } else {
+        (s, "")
+    };
+    let n: f64 = num_part.parse().ok()?;
+    let mb = match suffix.to_uppercase().as_str() {
+        "T" => (n * 1024.0 * 1024.0) as u64,
+        "G" => (n * 1024.0) as u64,
+        "M" | "" => n as u64,
+        _ => return None,
+    };
+    if mb == 0 { None } else { Some(mb) }
+}
+
+// ---------------------------------------------------------------------------
+// Capture configuration wizard
+// ---------------------------------------------------------------------------
+
 /// Ask the user whether to enable raw shred capture, and if so, collect
-/// formats, output directory, rotation size, and ring depth.
+/// formats, disk, and per-format max sizes.
 /// Returns `None` if the user skips capture.
 fn configure_capture() -> Option<CaptureConfig> {
     println!();
@@ -897,21 +995,14 @@ fn configure_capture() -> Option<CaptureConfig> {
     io::stdin().read_line(&mut input).ok();
     let choice = input.trim().to_string();
 
-    // Parse comma-separated selections like "1", "1,3", "1,2,3".
-    // Any token that is "4" or unrecognised skips capture if it's the only token,
-    // or is silently ignored when mixed with valid format tokens.
     let mut formats: Vec<String> = Vec::new();
-    let tokens: Vec<&str> = choice.split(',').map(str::trim).collect();
-
-    for token in &tokens {
-        match *token {
-            "1" => { if !formats.contains(&"pcap".to_string()) { formats.push("pcap".into()); } }
-            "2" => { if !formats.contains(&"csv".to_string())  { formats.push("csv".into());  } }
-            "3" => { if !formats.contains(&"jsonl".to_string()){ formats.push("jsonl".into()); } }
+    for token in choice.split(',').map(str::trim) {
+        match token {
+            "1" => { if !formats.contains(&"pcap".to_string())  { formats.push("pcap".into());  } }
+            "2" => { if !formats.contains(&"csv".to_string())   { formats.push("csv".into());   } }
+            "3" => { if !formats.contains(&"jsonl".to_string()) { formats.push("jsonl".into()); } }
             "4" | "" => {}
-            other => {
-                println!("  Ignoring unrecognised token {:?}.", other);
-            }
+            other => { println!("  Ignoring unrecognised token {:?}.", other); }
         }
     }
 
@@ -920,40 +1011,92 @@ fn configure_capture() -> Option<CaptureConfig> {
         return None;
     }
 
-    let output_dir = prompt_with_default(
-        "Output directory",
-        "/var/log/shredder-capture",
-        "path to write capture files",
-    );
+    // ── Step 2: choose a disk ────────────────────────────────────────────────
+    println!();
+    println!("  Choose a disk to write capture files to:");
+    println!();
 
-    let rotate_mb_str = prompt_with_default(
-        "Rotate every (MB)",
-        "500",
-        "new file after this many MB (per format)",
-    );
-    let rotate_mb: u64 = rotate_mb_str.parse().unwrap_or(500);
+    let disks = list_disks();
+    if disks.is_empty() {
+        println!("  (could not detect disks — enter path manually)");
+    } else {
+        println!("  {:<4}  {:<30}  {:>6}  {:>6}  {}", "#", "MOUNT POINT", "SIZE", "AVAIL", "USE%");
+        println!("  {}", "-".repeat(60));
+        for (i, d) in disks.iter().enumerate() {
+            println!("  {:<4}  {:<30}  {:>6}  {:>6}  {}", i + 1, d.mount, d.size, d.avail, d.use_pct);
+        }
+        println!();
+    }
 
-    let ring_files_str = prompt_with_default(
-        "Keep last N files",
-        "20",
-        &format!("ring depth per format  ({} × {} MB = {} GB each)", 20, rotate_mb, 20 * rotate_mb / 1024),
-    );
-    let ring_files: usize = ring_files_str.parse().unwrap_or(20);
+    let output_dir = if disks.is_empty() {
+        prompt_with_default("Output directory", "/var/log/shredder-capture", "full path")
+    } else {
+        print!("Disk [1-{}, or enter path]: ", disks.len());
+        io::stdout().flush().ok();
+        let mut sel = String::new();
+        io::stdin().read_line(&mut sel).ok();
+        let sel = sel.trim();
 
-    println!(
-        "  Capture: [{}] → {}  ({} × {} MB = {} GB ring per format)",
-        formats.join(", "),
-        output_dir,
-        ring_files,
-        rotate_mb,
-        ring_files as u64 * rotate_mb / 1024,
-    );
+        let mount = if let Ok(n) = sel.parse::<usize>() {
+            disks
+                .get(n.saturating_sub(1))
+                .map(|d| d.mount.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| "/var/log".to_string())
+        } else if !sel.is_empty() {
+            sel.trim_end_matches('/').to_string()
+        } else {
+            // default to first disk
+            disks[0].mount.trim_end_matches('/').to_string()
+        };
+
+        format!("{}/shredder-capture", mount)
+    };
+
+    // ── Step 3: max size per format ──────────────────────────────────────────
+    println!();
+    println!("  Set the maximum disk space each format may use.");
+    println!("  Use G for gigabytes, M for megabytes (e.g. 10G, 500M).");
+    println!();
+
+    let rotate_mb: u64 = 500; // fixed rotation interval
+    let mut max_size_mb: Vec<u64> = Vec::new();
+
+    for fmt in &formats {
+        let default_size = match fmt.as_str() {
+            "pcap"  => "50G",
+            "csv"   => "5G",
+            "jsonl" => "5G",
+            _       => "10G",
+        };
+        loop {
+            print!("  Max size for {} [default={}]: ", fmt, default_size);
+            io::stdout().flush().ok();
+            let mut s = String::new();
+            io::stdin().read_line(&mut s).ok();
+            let s = s.trim();
+            let raw = if s.is_empty() { default_size } else { s };
+            match parse_size_mb(raw) {
+                Some(mb) => {
+                    max_size_mb.push(mb);
+                    break;
+                }
+                None => println!("  Unrecognised size {:?} — try e.g. 10G or 500M.", raw),
+            }
+        }
+    }
+
+    // Summary
+    println!();
+    for (fmt, &max_mb) in formats.iter().zip(max_size_mb.iter()) {
+        let ring = (max_mb / rotate_mb).max(2);
+        println!("  {} → {}  (≤{} MB, {} × {} MB files)", fmt, output_dir, max_mb, ring, rotate_mb);
+    }
 
     Some(CaptureConfig {
         enabled: true,
         formats,
+        max_size_mb,
         output_dir,
         rotate_mb,
-        ring_files,
     })
 }

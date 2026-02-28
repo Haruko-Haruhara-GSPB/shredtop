@@ -107,10 +107,9 @@ pub struct PcapCaptureWriter {
 }
 
 impl PcapCaptureWriter {
-    pub fn new(config: &CaptureConfig) -> io::Result<Self> {
-        fs::create_dir_all(&config.output_dir)?;
-        let rotation =
-            RotationState::new(&config.output_dir, "pcap", config.rotate_mb, config.ring_files);
+    pub fn new(output_dir: &str, rotate_mb: u64, ring_files: usize) -> io::Result<Self> {
+        fs::create_dir_all(output_dir)?;
+        let rotation = RotationState::new(output_dir, "pcap", rotate_mb, ring_files);
         let writer = open_pcap_writer(&rotation.active_path())?;
         Ok(Self { writer: Some(writer), rotation })
     }
@@ -221,10 +220,9 @@ pub struct CsvCaptureWriter {
 }
 
 impl CsvCaptureWriter {
-    pub fn new(config: &CaptureConfig) -> io::Result<Self> {
-        fs::create_dir_all(&config.output_dir)?;
-        let rotation =
-            RotationState::new(&config.output_dir, "csv", config.rotate_mb, config.ring_files);
+    pub fn new(output_dir: &str, rotate_mb: u64, ring_files: usize) -> io::Result<Self> {
+        fs::create_dir_all(output_dir)?;
+        let rotation = RotationState::new(output_dir, "csv", rotate_mb, ring_files);
         let mut writer = BufWriter::new(File::create(rotation.active_path())?);
         writeln!(writer, "recv_ns,feed,slot,shred_idx")?;
         Ok(Self { writer, rotation })
@@ -278,10 +276,9 @@ pub struct JsonlCaptureWriter {
 }
 
 impl JsonlCaptureWriter {
-    pub fn new(config: &CaptureConfig) -> io::Result<Self> {
-        fs::create_dir_all(&config.output_dir)?;
-        let rotation =
-            RotationState::new(&config.output_dir, "jsonl", config.rotate_mb, config.ring_files);
+    pub fn new(output_dir: &str, rotate_mb: u64, ring_files: usize) -> io::Result<Self> {
+        fs::create_dir_all(output_dir)?;
+        let rotation = RotationState::new(output_dir, "jsonl", rotate_mb, ring_files);
         let writer = BufWriter::new(File::create(rotation.active_path())?);
         Ok(Self { writer, rotation })
     }
@@ -363,16 +360,21 @@ fn make_writer(config: &CaptureConfig) -> Box<dyn CaptureWriter> {
     let writers: Vec<Box<dyn CaptureWriter>> = config
         .formats
         .iter()
-        .map(|fmt| -> Box<dyn CaptureWriter> {
+        .enumerate()
+        .map(|(idx, fmt)| -> Box<dyn CaptureWriter> {
+            let ring = config.ring_files_for(idx);
             match fmt.as_str() {
                 "csv" => Box::new(
-                    CsvCaptureWriter::new(config).expect("failed to create CSV capture writer"),
+                    CsvCaptureWriter::new(&config.output_dir, config.rotate_mb, ring)
+                        .expect("failed to create CSV capture writer"),
                 ),
                 "jsonl" => Box::new(
-                    JsonlCaptureWriter::new(config).expect("failed to create JSONL capture writer"),
+                    JsonlCaptureWriter::new(&config.output_dir, config.rotate_mb, ring)
+                        .expect("failed to create JSONL capture writer"),
                 ),
                 _ => Box::new(
-                    PcapCaptureWriter::new(config).expect("failed to create pcap capture writer"),
+                    PcapCaptureWriter::new(&config.output_dir, config.rotate_mb, ring)
+                        .expect("failed to create pcap capture writer"),
                 ),
             }
         })
