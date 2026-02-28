@@ -12,27 +12,28 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+use crate::color;
 use crate::config::{CaptureConfig, ProbeConfig, SourceEntry};
 
 pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
     // -----------------------------------------------------------------------
     // Configured sources
     // -----------------------------------------------------------------------
-    println!("=== Configured sources (probe.toml) ===");
+    println!("{}", color::bold_cyan("=== Configured sources (probe.toml) ==="));
     show_configured_sources(config);
 
     // -----------------------------------------------------------------------
     // Active multicast memberships (ip maddr show)
     // -----------------------------------------------------------------------
     println!();
-    println!("=== Active multicast memberships ===");
+    println!("{}", color::bold_cyan("=== Active multicast memberships ==="));
     let memberships = collect_and_show_memberships();
 
     // -----------------------------------------------------------------------
     // DoubleZero group selection
     // -----------------------------------------------------------------------
     println!();
-    println!("=== DoubleZero multicast groups ===");
+    println!("{}", color::bold_cyan("=== DoubleZero multicast groups ==="));
     let mut dz_sources: Vec<SourceEntry> = Vec::new();
 
     match fetch_dz_groups() {
@@ -59,19 +60,24 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
                 .collect();
             for (i, g) in groups.iter().enumerate() {
                 let marker = if memberships.contains_key(&g.multicast_ip) {
-                    "[subscribed]"
+                    color::green("[subscribed]")
                 } else {
-                    ""
+                    String::new()
+                };
+                let status_colored = if g.status == "activated" {
+                    color::green(&g.status)
+                } else {
+                    color::yellow(&g.status)
                 };
                 println!(
-                    "  {:<4} {:<22} {:<16} {:>4} {:>4}  {:<12}  {}",
+                    "  {:<4} {:<22} {:<16} {:>4} {:>4}  {}  {}",
                     i + 1,
                     g.code,
                     g.multicast_ip,
                     g.publishers,
                     g.subscribers,
-                    g.status,
-                    marker
+                    color::rpad(&status_colored, 12),
+                    marker,
                 );
             }
             println!();
@@ -186,7 +192,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
                 // Show active UDP sockets on detected shred ports
                 let known_ports: Vec<u16> = traffic_ports.values().copied().collect();
                 println!();
-                println!("=== Active UDP sockets on shred ports ===");
+                println!("{}", color::bold_cyan("=== Active UDP sockets on shred ports ==="));
                 show_udp_sockets(&known_ports);
             }
         }
@@ -305,7 +311,7 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
                 });
             }
             _ => {
-                println!("  Running in shred-race-only mode.");
+                println!("  {}", color::yellow("Running in shred-race-only mode."));
                 println!("  Add a baseline later via `shredder discover`.");
             }
         }
@@ -354,10 +360,10 @@ pub fn run(config: &ProbeConfig, config_path: &Path) -> Result<()> {
             .unwrap_or(false);
         if svc_restarted {
             println!();
-            println!("  Service restarted. Run `shredder monitor` to watch live metrics.");
+            println!("  {}", color::bold_green("✓ Service restarted. Run `shredder monitor` to watch live metrics."));
         } else {
             println!();
-            println!("  Service not running. Start it with: shredder service start");
+            println!("  {}", color::yellow("⚠ Service not running. Start it with: shredder service start"));
         }
     } else {
         println!();
@@ -572,10 +578,13 @@ fn show_configured_sources(config: &ProbeConfig) {
         println!("  (none)");
     } else {
         println!(
-            "  {:<20} {:<10} {:<20} {:<8} {:<14}",
-            "NAME", "TYPE", "MULTICAST/URL", "PORT", "INTERFACE"
+            "  {}",
+            color::bold(&format!(
+                "{:<20} {:<10} {:<20} {:<8} {:<14}",
+                "NAME", "TYPE", "MULTICAST/URL", "PORT", "INTERFACE"
+            ))
         );
-        println!("  {}", "-".repeat(72));
+        println!("  {}", color::dim(&"-".repeat(72)));
         for s in &config.sources {
             match s.source_type.as_str() {
                 "shred" => {

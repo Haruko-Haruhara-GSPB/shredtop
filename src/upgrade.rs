@@ -4,6 +4,8 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::process::Command;
 
+use crate::color;
+
 const RELEASES_API: &str =
     "https://api.github.com/repos/Haruko-Haruhara-GSPB/shred-probe/releases/latest";
 const DOWNLOAD_URL: &str =
@@ -26,11 +28,11 @@ pub fn run() -> Result<()> {
 
     let tag = latest.unwrap();
     if tag == format!("v{}", current) {
-        println!("Already up to date.");
+        println!("{}", color::green("Already up to date."));
         return Ok(());
     }
 
-    println!("Upgrading to {}...", tag);
+    println!("{}", color::cyan(&format!("Upgrading to {}...", tag)));
 
     let url = DOWNLOAD_URL.replace("{tag}", &tag);
     let dest = which_shredder()?;
@@ -56,7 +58,7 @@ pub fn run() -> Result<()> {
     // Atomic rename — works even while the old binary is running
     std::fs::rename(&tmp, &dest)?;
 
-    println!("Done. {} installed to {}.", tag, dest.display());
+    println!("{}", color::bold_green(&format!("✓ Done. {} installed to {}.", tag, dest.display())));
     Ok(())
 }
 
@@ -118,7 +120,7 @@ pub fn run_from_source() -> Result<()> {
 
     std::fs::rename(&tmp, &dest)?;
 
-    println!("Done. Built from source (main) installed to {}.", dest.display());
+    println!("{}", color::bold_green(&format!("✓ Done. Built from source (main) installed to {}.", dest.display())));
     Ok(())
 }
 

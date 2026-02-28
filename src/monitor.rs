@@ -12,6 +12,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::color;
 use crate::config::SourceEntry;
 use crate::run::DEFAULT_LOG;
 
@@ -43,7 +44,10 @@ pub fn run(interval_secs: u64) -> Result<()> {
     RUNNING.store(true, Ordering::SeqCst);
     unsafe { libc::signal(libc::SIGINT, handle_sigint as *const () as libc::sighandler_t) };
 
-    println!("SHREDDER MONITOR  —  Ctrl-C to close  (service keeps running)");
+    println!(
+        "{}",
+        color::bold("SHREDDER MONITOR  —  Ctrl-C to close  (service keeps running)")
+    );
     println!();
 
     let mut lines_drawn = 0usize;
@@ -119,10 +123,10 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     };
 
     // Header
-    out.push("=".repeat(W));
-    out.push(format!("{:^W$}", format!("  SHREDDER FEED QUALITY  {}  ", time_str)));
-    out.push("=".repeat(W));
-    out.push(format!("  Started: {}   Uptime: {}", started_str, uptime_str));
+    out.push(color::bold(&"=".repeat(W)));
+    out.push(color::bold_cyan(&format!("{:^W$}", format!("  SHREDDER FEED QUALITY  {}  ", time_str))));
+    out.push(color::bold(&"=".repeat(W)));
+    out.push(color::dim(&format!("  Started: {}   Uptime: {}", started_str, uptime_str)));
     out.push(String::new());
 
     // Determine whether any baseline (rpc/geyser) source is present — must
@@ -139,17 +143,17 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
     // Column headers — BEAT%/LEAD columns only shown when a baseline exists
     if has_rpc {
-        out.push(format!(
+        out.push(color::bold(&format!(
             "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
             "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
-        ));
+        )));
     } else {
-        out.push(format!(
+        out.push(color::bold(&format!(
             "{:<20}  {:>9}  {:>5}  {:>6}",
             "SOURCE", "SHREDS/s", "COV%", "TXS/s",
-        ));
+        )));
     }
-    out.push("-".repeat(W));
+    out.push(color::dim(&"-".repeat(W)));
 
     let mut edge_lines: Vec<String> = Vec::new();
 
@@ -171,7 +175,7 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
 
             let txs_str = format!("{:.0}", s["txs_per_sec"].as_f64().unwrap_or(0.0));
 
-            if has_rpc {
+            let row = if has_rpc {
                 let beat_str = if is_rpc {
                     "—".into()
                 } else {
@@ -199,16 +203,32 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
                     ("—".into(), "—".into(), "—".into(), "—".into())
                 };
 
-                out.push(format!(
+                format!(
                     "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
                     name, shreds_str, cov_str, txs_str, beat_str, avg_str, p50_str, p95_str, p99_str,
-                ));
+                )
             } else {
-                out.push(format!(
+                format!(
                     "{:<20}  {:>9}  {:>5}  {:>6}",
                     name, shreds_str, cov_str, txs_str,
-                ));
-            }
+                )
+            };
+
+            // Colorize entire row based on source type and edge health
+            let row = if is_rpc {
+                color::dim(&row)
+            } else if let Some(beat) = s["beat_rpc_pct"].as_f64() {
+                if beat >= 60.0 {
+                    color::green(&row)
+                } else if beat >= 40.0 {
+                    color::yellow(&row)
+                } else {
+                    color::red(&row)
+                }
+            } else {
+                row
+            };
+            out.push(row);
 
             // Edge assessment for shred sources (only meaningful with a baseline)
             if !is_rpc && has_rpc {
@@ -216,13 +236,13 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
                     let mean_ms = mean_us / 1000.0;
                     let samples = s["lead_time_samples"].as_u64().unwrap_or(0);
                     let (label, symbol) = if mean_us > 1_000.0 {
-                        ("AHEAD of RPC", "\x1b[32m✓\x1b[0m")
+                        ("AHEAD of RPC", color::bold_green("✓"))
                     } else if mean_us > 0.0 {
-                        ("marginally ahead", "\x1b[33m~\x1b[0m")
+                        ("marginally ahead", color::yellow("~"))
                     } else if mean_us > -5_000.0 {
-                        ("BEHIND RPC", "\x1b[31m⚠\x1b[0m")
+                        ("BEHIND RPC", color::yellow("⚠"))
                     } else {
-                        ("BADLY BEHIND RPC", "\x1b[31m✗\x1b[0m")
+                        ("BADLY BEHIND RPC", color::red("✗"))
                     };
                     edge_lines.push(format!(
                         "  {}  {:<20} {}  by {:.2}ms avg  ({} samples)",
@@ -233,22 +253,24 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
         }
     }
 
-    out.push("-".repeat(W));
+    out.push(color::dim(&"-".repeat(W)));
 
     // Shred race section — directly under the feed table, before edge assessment
     out.push(String::new());
-    out.push("SHRED RACE  validator \u{2192} this machine  (since start):".into());
+    out.push(color::bold(&format!(
+        "SHRED RACE  validator \u{2192} this machine  (since start):"
+    )));
     let race_pairs = entry["shred_race"].as_array();
     let has_race = race_pairs.map(|p| !p.is_empty()).unwrap_or(false);
     if !has_race {
-        out.push(
-            "  No races yet — waiting for same slot to appear on multiple shred feeds.".into(),
-        );
+        out.push(color::dim(
+            "  No races yet — waiting for same slot to appear on multiple shred feeds.",
+        ));
     } else {
-        out.push(format!(
+        out.push(color::bold(&format!(
             "  {:<22}  {:>7}  {:>9}  {:>10}  {:>9}  {:>9}",
             "CONTENDER", "WIN%", "RACES", "FASTER BY", "LEAD p50", "LEAD p95",
-        ));
+        )));
         let mut pairs: Vec<&serde_json::Value> = race_pairs.unwrap().iter().collect();
         pairs.sort_by(|a, b| {
             let ma = a["total_matched"].as_u64().unwrap_or(0);
@@ -281,39 +303,40 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
                 .as_f64()
                 .map(|v| format!("+{:.1}ms", v / 1000.0))
                 .unwrap_or_else(|| "—".into());
-            out.push(format!(
+            out.push(color::green(&format!(
                 "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
                 faster, f_pct, format_num(matched), avg_str, p50_str, p95_str,
-            ));
-            out.push(format!(
+            )));
+            out.push(color::dim(&format!(
                 "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
                 slower, s_pct, "—", "—", "—", "—",
-            ));
+            )));
         }
     }
     out.push(String::new());
-    out.push(
-        "  Matched on (slot, shred_index) \u{2014} when the same shred arrives on both feeds, records".into(),
-    );
-    out.push(
-        "  which relay delivered it first and by how much. Timing uses the kernel UDP receive".into(),
-    );
-    out.push(
-        "  timestamp (SO_TIMESTAMPNS), before any userspace processing.".into(),
-    );
+    out.push(color::dim(
+        "  Matched on (slot, shred_index) \u{2014} when the same shred arrives on both feeds, records",
+    ));
+    out.push(color::dim(
+        "  which relay delivered it first and by how much. Timing uses the kernel UDP receive",
+    ));
+    out.push(color::dim(
+        "  timestamp (SO_TIMESTAMPNS), before any userspace processing.",
+    ));
 
     out.push(String::new());
 
     // Edge assessment
-    out.push("EDGE ASSESSMENT:".into());
+    out.push(color::bold("EDGE ASSESSMENT:"));
     if edge_lines.is_empty() {
         if !has_rpc {
-            out.push(
-                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one."
-                    .into(),
-            );
+            out.push(color::yellow(
+                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one.",
+            ));
         } else {
-            out.push("  Warming up — lead times appear once transactions match across feeds.".into());
+            out.push(color::dim(
+                "  Warming up — lead times appear once transactions match across feeds.",
+            ));
         }
     } else {
         for line in &edge_lines {
@@ -322,15 +345,16 @@ fn draw_dashboard(entry: &serde_json::Value) -> usize {
     }
 
     out.push(String::new());
-    out.push("-".repeat(W));
+    out.push(color::dim(&"-".repeat(W)));
     if has_rpc {
-        out.push(
+        out.push(color::dim(
             "COV% = block shreds received  BEAT% = % of matched txs where feed beat RPC  \
-             LEAD = ms before RPC confirms  p50/p95/p99 = percentiles"
-                .into(),
-        );
+             LEAD = ms before RPC confirms  p50/p95/p99 = percentiles",
+        ));
     } else {
-        out.push("COV% = block shreds received  (add a baseline to unlock BEAT%/LEAD columns)".into());
+        out.push(color::dim(
+            "COV% = block shreds received  (add a baseline to unlock BEAT%/LEAD columns)",
+        ));
     }
 
     let count = out.len();

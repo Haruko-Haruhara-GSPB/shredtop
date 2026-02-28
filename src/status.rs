@@ -7,6 +7,7 @@
 use anyhow::Result;
 use chrono::{TimeZone, Utc};
 
+use crate::color;
 use crate::run::DEFAULT_LOG;
 
 pub fn run() -> Result<()> {
@@ -61,27 +62,33 @@ pub fn run() -> Result<()> {
         .unwrap_or(false);
 
     let width = 100;
-    println!("{:=<width$}", "");
+    println!("{}", color::bold(&"=".repeat(width)));
     println!(
-        "{:^width$}",
-        format!(" SHREDDER STATUS  {} ", time_str)
+        "{}",
+        color::bold_cyan(&format!("{:^width$}", format!(" SHREDDER STATUS  {} ", time_str)))
     );
-    println!("{:=<width$}", "");
-    println!("  Started: {}   Uptime: {}", started_str, uptime_str);
+    println!("{}", color::bold(&"=".repeat(width)));
+    println!("{}", color::dim(&format!("  Started: {}   Uptime: {}", started_str, uptime_str)));
     println!();
 
     if has_rpc {
         println!(
-            "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
-            "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
+            "{}",
+            color::bold(&format!(
+                "{:<20}  {:>9}  {:>5}  {:>6}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
+                "SOURCE", "SHREDS/s", "COV%", "TXS/s", "BEAT%", "LEAD avg", "LEAD p50", "LEAD p95", "LEAD p99",
+            ))
         );
     } else {
         println!(
-            "{:<20}  {:>9}  {:>5}  {:>6}",
-            "SOURCE", "SHREDS/s", "COV%", "TXS/s",
+            "{}",
+            color::bold(&format!(
+                "{:<20}  {:>9}  {:>5}  {:>6}",
+                "SOURCE", "SHREDS/s", "COV%", "TXS/s",
+            ))
         );
     }
-    println!("{:-<width$}", "");
+    println!("{}", color::dim(&"-".repeat(width)));
 
     if let Some(sources) = entry["sources"].as_array() {
         for s in sources {
@@ -103,7 +110,7 @@ pub fn run() -> Result<()> {
             };
             let txs = s["txs_per_sec"].as_f64().unwrap_or(0.0);
 
-            if has_rpc {
+            let row = if has_rpc {
                 let beat = if is_rpc {
                     "—".into()
                 } else {
@@ -129,27 +136,41 @@ pub fn run() -> Result<()> {
                 } else {
                     ("—".into(), "—".into(), "—".into(), "—".into())
                 };
-                println!(
+                format!(
                     "{:<20}  {:>9}  {:>5}  {:>6.0}  {:>6}  {:>9}  {:>9}  {:>9}  {:>9}",
                     name, shreds_str, cov, txs, beat, avg_str, p50_str, p95_str, p99_str,
-                );
+                )
             } else {
-                println!(
+                format!(
                     "{:<20}  {:>9}  {:>5}  {:>6.0}",
                     name, shreds_str, cov, txs,
-                );
-            }
+                )
+            };
+
+            let row = if is_rpc {
+                color::dim(&row)
+            } else if let Some(beat) = s["beat_rpc_pct"].as_f64() {
+                if beat >= 60.0 { color::green(&row) }
+                else if beat >= 40.0 { color::yellow(&row) }
+                else { color::red(&row) }
+            } else {
+                row
+            };
+            println!("{}", row);
         }
     }
 
-    println!("{:-<width$}", "");
+    println!("{}", color::dim(&"-".repeat(width)));
     println!();
 
-    // Dedup diagnostics: txs_first / txs_duplicate (cumulative since start)
-    println!("DEDUP (cumulative since start):");
+    // Dedup diagnostics
+    println!("{}", color::bold("DEDUP (cumulative since start):"));
     println!(
-        "  {:<20}  {:>10}  {:>12}",
-        "SOURCE", "TXS_FIRST", "TXS_DUPLICATE"
+        "{}",
+        color::bold(&format!(
+            "  {:<20}  {:>10}  {:>12}",
+            "SOURCE", "TXS_FIRST", "TXS_DUPLICATE"
+        ))
     );
     if let Some(sources) = entry["sources"].as_array() {
         for s in sources {
@@ -162,17 +183,23 @@ pub fn run() -> Result<()> {
     println!();
 
     // Shred-level race section
-    println!("SHRED RACE  validator \u{2192} this machine  (since start):");
+    println!("{}", color::bold(&format!(
+        "SHRED RACE  validator \u{2192} this machine  (since start):"
+    )));
     let race_pairs = entry["shred_race"].as_array();
     let has_race = race_pairs.map(|p| !p.is_empty()).unwrap_or(false);
     if !has_race {
         println!(
-            "  No races yet — waiting for same slot to appear on multiple shred feeds."
+            "{}",
+            color::dim("  No races yet — waiting for same slot to appear on multiple shred feeds.")
         );
     } else {
         println!(
-            "  {:<22}  {:>7}  {:>9}  {:>10}  {:>9}  {:>9}",
-            "CONTENDER", "WIN%", "RACES", "FASTER BY", "LEAD p50", "LEAD p95",
+            "{}",
+            color::bold(&format!(
+                "  {:<22}  {:>7}  {:>9}  {:>10}  {:>9}  {:>9}",
+                "CONTENDER", "WIN%", "RACES", "FASTER BY", "LEAD p50", "LEAD p95",
+            ))
         );
         let mut pairs: Vec<&serde_json::Value> = race_pairs.unwrap().iter().collect();
         pairs.sort_by(|a, b| {
@@ -207,33 +234,45 @@ pub fn run() -> Result<()> {
                 .map(|v| format!("+{:.1}ms", v / 1000.0))
                 .unwrap_or_else(|| "—".into());
             println!(
-                "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
-                faster, f_pct, format_num(matched), avg_str, p50_str, p95_str,
+                "{}",
+                color::green(&format!(
+                    "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
+                    faster, f_pct, format_num(matched), avg_str, p50_str, p95_str,
+                ))
             );
             println!(
-                "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
-                slower, s_pct, "—", "—", "—", "—",
+                "{}",
+                color::dim(&format!(
+                    "  {:<22}  {:>6.1}%  {:>9}  {:>10}  {:>9}  {:>9}",
+                    slower, s_pct, "—", "—", "—", "—",
+                ))
             );
         }
     }
     println!();
-    println!(
+    println!("{}", color::dim(
         "  Matched on (slot, shred_index) \u{2014} when the same shred arrives on both feeds, records"
-    );
-    println!(
+    ));
+    println!("{}", color::dim(
         "  which relay delivered it first and by how much. Timing uses the kernel UDP receive"
-    );
-    println!(
+    ));
+    println!("{}", color::dim(
         "  timestamp (SO_TIMESTAMPNS), before any userspace processing."
-    );
+    ));
     println!();
     if !has_rpc {
         println!(
-            "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one."
+            "{}",
+            color::yellow(
+                "  Shred-race-only mode — BEAT%/LEAD require a baseline source. Run `shredder discover` to add one."
+            )
         );
         println!();
     }
-    println!("Log: {}  (shredder service status for service health)", DEFAULT_LOG);
+    println!(
+        "{}",
+        color::dim(&format!("Log: {}  (shredder service status for service health)", DEFAULT_LOG))
+    );
 
     Ok(())
 }

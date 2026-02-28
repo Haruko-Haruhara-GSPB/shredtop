@@ -6,6 +6,7 @@ use pcap_file::pcap::PcapReader;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use crate::color;
 use crate::config::ProbeConfig;
 
 pub fn run(config_path: &Path) -> Result<()> {
@@ -51,7 +52,7 @@ pub fn run(config_path: &Path) -> Result<()> {
     files.sort_by_key(|p| archive_generation(p));
 
     let mut total_bytes: u64 = 0;
-    println!("CAPTURE RING  {}", output_dir.display());
+    println!("{}", color::bold_cyan(&format!("CAPTURE RING  {}", output_dir.display())));
 
     for path in &files {
         let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -63,15 +64,20 @@ pub fn run(config_path: &Path) -> Result<()> {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         let size_str = human_size(size);
         let ts_str = match (first_ts, last_ts) {
-            (Some(f), Some(l)) if is_active => {
-                format!("{} → (current)", fmt_ts(f), )
+            (Some(f), Some(_l)) if is_active => {
+                format!("{} → (current)", fmt_ts(f))
             }
             (Some(f), Some(l)) => format!("{} → {}", fmt_ts(f), fmt_ts(l)),
             (Some(f), None) => format!("{} → (current)", fmt_ts(f)),
             _ => "—".into(),
         };
 
-        println!("  {:<30}  {:>8}  {}", name, size_str, ts_str);
+        let row = format!("  {:<30}  {:>8}  {}", name, size_str, ts_str);
+        if is_active {
+            println!("{}", color::bold(&row));
+        } else {
+            println!("{}", color::dim(&row));
+        }
     }
 
     let ring_cap_mb: u64 = cap
@@ -81,11 +87,14 @@ pub fn run(config_path: &Path) -> Result<()> {
         .map(|(i, _)| cap.ring_files_for(i) as u64 * cap.rotate_mb)
         .sum();
     println!(
-        "  Total: {}   ({} file(s), ring capacity {} MB across {} format(s))",
-        human_size(total_bytes),
-        files.len(),
-        ring_cap_mb,
-        cap.formats.len(),
+        "{}",
+        color::bold(&format!(
+            "  Total: {}   ({} file(s), ring capacity {} MB across {} format(s))",
+            human_size(total_bytes),
+            files.len(),
+            ring_cap_mb,
+            cap.formats.len(),
+        ))
     );
 
     Ok(())

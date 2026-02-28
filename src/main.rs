@@ -10,6 +10,7 @@ use tracing_subscriber::EnvFilter;
 mod analyze;
 mod bench;
 mod capture;
+mod color;
 mod capture_status;
 mod cli;
 mod config;
