@@ -360,13 +360,10 @@ To subscribe to a multicast group over DoubleZero refer to the DoubleZero docume
 ## Uninstall
 
 ```bash
-shredtop service uninstall                    # stop, disable, remove unit file
-cargo uninstall shredtop                      # remove binary (if installed via cargo)
-rm /usr/local/bin/shredtop                    # remove binary (if installed via curl)
-rm -f /var/log/shredtop.jsonl                 # remove metrics log
-rm -rf "$(grep output_dir probe.toml | head -1 | cut -d'"' -f2)"  # remove capture files (check probe.toml for path)
-rm -rf ~/shredtop probe.toml               # remove source and config
+shredtop uninstall
 ```
+
+Stops and removes the systemd service, binary, metrics log, capture files, config, and source directory. Prompts for confirmation before proceeding.
 
 ---
 

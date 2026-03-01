@@ -19,6 +19,7 @@ mod monitor;
 mod run;
 mod service;
 mod status;
+mod uninstall;
 mod upgrade;
 
 use cli::{CaptureAction, Cli, Commands, ServiceAction};
@@ -32,7 +33,7 @@ fn main() -> Result<()> {
 
     // Load config (except for commands that don't need it)
     let config = match &cli.command {
-        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } | Commands::Monitor { .. } | Commands::Capture { .. } | Commands::Analyze { .. } => None,
+        Commands::Init | Commands::Upgrade { .. } | Commands::Status | Commands::Service { .. } | Commands::Monitor { .. } | Commands::Capture { .. } | Commands::Analyze { .. } | Commands::Uninstall => None,
         _ => {
             if !cli.config.exists() {
                 std::fs::write(&cli.config, b"")?;
@@ -86,6 +87,9 @@ fn main() -> Result<()> {
         },
         Commands::Analyze { pcap, feed, min_matched } => {
             analyze::run(&pcap, &feed, min_matched)?;
+        }
+        Commands::Uninstall => {
+            uninstall::run(&cli.config)?;
         }
     }
 

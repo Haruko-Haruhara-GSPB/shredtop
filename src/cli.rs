@@ -61,6 +61,9 @@ pub enum Commands {
     /// Print an example probe.toml to stdout
     Init,
 
+    /// Remove all shredtop files from the system (service, binary, logs, capture files, config)
+    Uninstall,
+
     /// Upgrade shredtop to the latest release binary
     Upgrade {
         /// Pull main branch and rebuild from source instead of downloading a release
